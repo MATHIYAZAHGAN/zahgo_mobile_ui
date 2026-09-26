@@ -21,7 +21,8 @@
         "buildType": "apk"
       },
       "env": {
-        "API_URL": "https://your-backend-url.railway.app/api/v1"
+        "API_URL": "https://zahgo-mobile-app-backend.onrender.com/api/v1",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "production"
       }
     }
   },

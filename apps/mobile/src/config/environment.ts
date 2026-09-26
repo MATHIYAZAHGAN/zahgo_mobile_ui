@@ -47,14 +47,14 @@ const ENV = {
     appName: 'ZAH Seller AI (Dev)',
   },
   staging: {
-    apiUrl: 'https://staging-api.zahsellerai.com/api/v1',
+    apiUrl: 'https://zahgo-mobile-app-backend.onrender.com/api/v1',
     environment: 'staging' as Environment,
     enableLogging: true,
     aiDemoMode: false,
     appName: 'ZAH Seller AI (Staging)',
   },
   production: {
-    apiUrl: 'https://api.zahsellerai.com/api/v1',
+    apiUrl: 'https://zahgo-mobile-app-backend.onrender.com/api/v1',
     environment: 'production' as Environment,
     enableLogging: false,
     aiDemoMode: false,
