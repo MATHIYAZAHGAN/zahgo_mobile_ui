@@ -56,9 +56,8 @@
     "extra": {
       "apiUrl": "https://zahgo-mobile-app-backend.onrender.com/api/v1",
       "releaseChannel": "production",
-      "eas": {
-        "projectId": "your-eas-project-id"
-      }
+      "eas": {}
+      
     }
   }
 }
