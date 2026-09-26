@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "ZAH Seller AI",
+    "slug": "zahsellerai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#2563EB"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zahsellerai.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "ZAH Seller AI needs camera access to capture product photos.",
+        "NSMicrophoneUsageDescription": "ZAH Seller AI needs microphone access to record voice descriptions.",
+        "NSPhotoLibraryUsageDescription": "ZAH Seller AI needs photo library access to select product images."
+      }
+    },
+    "android": {
+      "package": "com.zahsellerai.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {},
+    "plugins": [
+      "expo-dev-client",
+      "expo-camera",
+      "expo-av",
+      "expo-audio",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ZAH Seller AI needs access to your photos to select product images.",
+          "cameraPermission": "ZAH Seller AI needs camera access to capture product photos."
+        }
+      ],
+      "expo-localization",
+      "expo-secure-store",
+      "expo-asset",
+      "expo-status-bar"
+    ],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:5000/api/v1",
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  }
+}
