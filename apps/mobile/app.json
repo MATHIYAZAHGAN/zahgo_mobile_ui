@@ -5,9 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#2563EB"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -38,6 +35,12 @@
       "expo-camera",
       "expo-av",
       "expo-audio",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2563EB"
+        }
+      ],
       [
         "expo-image-picker",
         {

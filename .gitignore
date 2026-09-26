@@ -163,3 +163,10 @@ coverage/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+# ===========================
+# EAS Build - CNG / Prebuild
+# Let EAS regenerate native folders from app.json
+# ===========================
+apps/mobile/android/
+apps/mobile/ios/
