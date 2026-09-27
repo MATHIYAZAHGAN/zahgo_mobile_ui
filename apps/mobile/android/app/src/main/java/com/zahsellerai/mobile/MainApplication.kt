@@ -12,9 +12,9 @@ import com.facebook.react.ReactHost
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
+import com.facebook.react.defaults.DefaultReactHost
 
 import expo.modules.ApplicationLifecycleDispatcher
-import expo.modules.ExpoReactHostFactory
 
 class MainApplication : Application(), ReactApplication {
 
@@ -33,10 +33,7 @@ class MainApplication : Application(), ReactApplication {
       }
 
   override val reactHost: ReactHost
-    get() = ExpoReactHostFactory.getDefaultReactHost(
-      applicationContext,
-      PackageList(reactNativeHost).packages
-    )
+    get() = DefaultReactHost.getDefaultReactHost(applicationContext, reactNativeHost)
 
   override fun onCreate() {
     super.onCreate()
