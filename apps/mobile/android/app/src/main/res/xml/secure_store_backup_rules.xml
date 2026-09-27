@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup rules for expo-secure-store.
+  Excludes SecureStore files from Android Auto Backup to prevent
+  restoring encrypted values to a different device (which would fail to decrypt).
+-->
+<full-backup-content>
+  <exclude domain="sharedpref" path="SecureStore"/>
+</full-backup-content>

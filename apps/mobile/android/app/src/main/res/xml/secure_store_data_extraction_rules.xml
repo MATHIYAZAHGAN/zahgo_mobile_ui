@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Data extraction rules for expo-secure-store (Android 12+).
+  Excludes SecureStore files from cloud backup and device-to-device transfer.
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="sharedpref" path="SecureStore"/>
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="sharedpref" path="SecureStore"/>
+  </device-transfer>
+</data-extraction-rules>
