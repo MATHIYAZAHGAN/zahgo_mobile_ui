@@ -1,15 +1,12 @@
 import { Platform } from 'react-native';
 
 // Safe lazy native module resolvers (Prevents top-level [runtime not ready] red screen crashes)
+// expo-av removed — incompatible with RN 0.86 JSI ABI. Using expo-audio only.
 let cachedLegacyAudioAV: any = undefined;
 function getLegacyAudioAV(): any {
   if (cachedLegacyAudioAV !== undefined) return cachedLegacyAudioAV;
-  try {
-    const av = require('expo-av');
-    cachedLegacyAudioAV = av?.Audio || null;
-  } catch (e: any) {
-    cachedLegacyAudioAV = null;
-  }
+  // expo-av is not installed — always return null
+  cachedLegacyAudioAV = null;
   return cachedLegacyAudioAV;
 }
 
