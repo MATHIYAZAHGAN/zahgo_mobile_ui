@@ -32,16 +32,16 @@ export const PRODUCT_STATUS = {
   ARCHIVED: 'archived',
 } as const;
 
-// Product Status Labels (Multilingual - Tamil as primary)
+// Product Status Labels (English)
 export const PRODUCT_STATUS_LABELS = {
-  draft: 'Draft / வரைவு',
-  uploading: 'Uploading / பதிவேற்றம்',
-  processing: 'Processing / செயலாக்கம்',
-  ai_review: 'AI Review / AI பரிசீலனை',
-  ready: 'Ready / தயார்',
-  published: 'Published / வெளியிடப்பட்டது',
-  failed: 'Failed / தோல்வி',
-  archived: 'Archived / காப்பகப்படுத்தப்பட்டது',
+  draft: 'Draft',
+  uploading: 'Uploading',
+  processing: 'Processing',
+  ai_review: 'AI Review',
+  ready: 'Ready',
+  published: 'Published',
+  failed: 'Failed',
+  archived: 'Archived',
 };
 
 // Languages
@@ -69,32 +69,26 @@ export const AI_STAGES = [
   {
     key: 'image_quality',
     label: 'Analyzing product image',
-    tamilLabel: 'படத்தை பகுப்பாய்வு செய்கிறது',
   },
   {
     key: 'voice_transcription',
     label: 'Understanding your voice',
-    tamilLabel: 'உங்கள் குரலை புரிந்துகொள்கிறது',
   },
   {
     key: 'product_identification',
     label: 'Identifying product',
-    tamilLabel: 'தயாரிப்பை அடையாளம் காண்கிறது',
   },
   {
     key: 'catalog_generation',
     label: 'Creating product details',
-    tamilLabel: 'தயாரிப்பு விவரங்களை உருவாக்குகிறது',
   },
   {
     key: 'seo_generation',
     label: 'Preparing catalog',
-    tamilLabel: 'பட்டியலை தயார் செய்கிறது',
   },
   {
     key: 'finalization',
     label: 'Finalizing',
-    tamilLabel: 'இறுதி செய்கிறது',
   },
 ];
 
@@ -188,23 +182,16 @@ export const VOICE = {
 // Error Messages
 export const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Network error. Please check your internet connection.',
-  NETWORK_ERROR_TAMIL: 'இணைய பிழை. உங்கள் இணைய இணைப்பை சரிபார்க்கவும்.',
   SERVER_ERROR: 'Something went wrong. Please try again.',
-  SERVER_ERROR_TAMIL: 'ஏதோ தவறு நடந்தது. மீண்டும் முயற்சிக்கவும்.',
   UNAUTHORIZED: 'Please login to continue.',
-  UNAUTHORIZED_TAMIL: 'தொடர உள்நுழையவும்.',
   IMAGE_TOO_LARGE: `Image size must be less than ${MAX_IMAGE_SIZE_MB}MB.`,
-  IMAGE_TOO_LARGE_TAMIL: `படத்தின் அளவு ${MAX_IMAGE_SIZE_MB}MB க்கும் குறைவாக இருக்க வேண்டும்.`,
   POOR_IMAGE_QUALITY: 'Photo is a little unclear. Please take another photo.',
-  POOR_IMAGE_QUALITY_TAMIL: 'புகைப்படம் சற்று தெளிவற்றது. மற்றொரு புகைப்படம் எடுக்கவும்.',
 } as const;
 
 // Success Messages
 export const SUCCESS_MESSAGES = {
   PRODUCT_PUBLISHED: 'Your product is now online! 🎉',
-  PRODUCT_PUBLISHED_TAMIL: 'உங்கள் தயாரிப்பு இப்போது இணையத்தில் உள்ளது! 🎉',
   DRAFT_SAVED: 'Draft saved successfully.',
-  DRAFT_SAVED_TAMIL: 'வரைவு வெற்றிகரமாக சேமிக்கப்பட்டது.',
 } as const;
 
 // Feature Flags (for gradual rollout)

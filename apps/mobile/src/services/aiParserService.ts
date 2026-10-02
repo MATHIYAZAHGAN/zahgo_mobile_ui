@@ -131,7 +131,12 @@ export class AIParserService {
     draft: ProductDraftState,
     imageUri: string = ''
   ): AIAnalysisResult {
-    const productName = draft.productName || 'E-Commerce Retail Product';
+    // Translate productName to English if it contains Tamil
+    const rawName = draft.productName || 'E-Commerce Retail Product';
+    const hasTamil = /[\u0B80-\u0BFF]/.test(rawName);
+    const productName = hasTamil
+      ? (this.translateTamilToEnglish(rawName).englishTranslation || rawName)
+      : rawName;
     const categoryName = draft.category || 'General';
     const price = draft.price || 499;
     const mrp = draft.mrp || Math.round(price * 1.35);
@@ -162,7 +167,7 @@ export class AIParserService {
     if (draft.color) {
       specifications.push({
         key: 'color',
-        label: 'Color / நிறம்',
+        label: 'Color',
         value: { value: draft.color, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
         order: specOrder++,
       });
@@ -170,7 +175,7 @@ export class AIParserService {
     if (draft.size) {
       specifications.push({
         key: 'size',
-        label: 'Size / அளவு',
+        label: 'Size',
         value: { value: draft.size, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
         order: specOrder++,
       });
@@ -178,7 +183,7 @@ export class AIParserService {
     if (draft.material) {
       specifications.push({
         key: 'material',
-        label: 'Material / துணி',
+        label: 'Material',
         value: { value: draft.material, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
         order: specOrder++,
       });
@@ -186,7 +191,7 @@ export class AIParserService {
     if (draft.warranty) {
       specifications.push({
         key: 'warranty',
-        label: 'Warranty / உத்தரவாதம்',
+        label: 'Warranty',
         value: { value: draft.warranty, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
         order: specOrder++,
       });
@@ -337,7 +342,7 @@ export class AIParserService {
     }
 
     // Default Category & Attribute Parsing based on keywords
-    let categoryName = 'General Catalog / பொதுப் பொருட்கள்';
+    let categoryName = 'General';
     let subCategoryName = 'General Merchandise';
     let productType = 'Product';
     let productName = rawText.length > 5 ? rawText : 'New Physical Product';
@@ -365,7 +370,7 @@ export class AIParserService {
       brand = lower.includes('zebronics') || lower.includes('zeb') ? 'Zebronics' : 'AudioTech';
       model = 'Zeb-Bro C Type-C';
       productName = `${brand} Zeb-Bro C Type-C In-Ear Earphones with Mic`;
-      categoryName = 'Electronics & Audio / மின்னணு சாதனங்கள்';
+      categoryName = 'Electronics & Audio';
       subCategoryName = 'Headphones & Earphones';
       productType = 'In-Ear Earphones';
       price = price === 999 ? 399 : price;
@@ -383,19 +388,19 @@ export class AIParserService {
       specifications = [
         {
           key: 'connector',
-          label: 'Connector / இணைப்பு',
+          label: 'Connector',
           value: { value: 'Type-C Audio Port', source: InformationSource.Vision, confidence: 0.99, createdAt: new Date().toISOString() },
           order: 1,
         },
         {
           key: 'mic',
-          label: 'Microphone / மைக்ரோஃபோன்',
+          label: 'Microphone',
           value: { value: 'In-line HD Mic', source: InformationSource.SellerVoice, confidence: 0.98, createdAt: new Date().toISOString() },
           order: 2,
         },
         {
           key: 'warranty',
-          label: 'Warranty / உத்தரவாதம்',
+          label: 'Warranty',
           value: { value: '1 Year Brand Warranty', source: InformationSource.AIInference, confidence: 0.95, createdAt: new Date().toISOString() },
           order: 3,
         },
@@ -416,7 +421,7 @@ export class AIParserService {
       brand = lower.includes('butterfly') || lower.includes('பட்டர்ஃப்ளை') ? 'Butterfly' : 'Prestige';
       model = lower.includes('750') ? 'Jet Elite 750W' : 'Smart Grinder';
       productName = `${brand} ${model} Heavy Duty Mixer Grinder with 3 Jars`;
-      categoryName = 'Home & Kitchen / சமையலறை சாதனங்கள்';
+      categoryName = 'Home & Kitchen';
       subCategoryName = 'Kitchen Appliances';
       productType = 'Mixer Grinder';
       
@@ -433,19 +438,19 @@ export class AIParserService {
       specifications = [
         {
           key: 'power',
-          label: 'Power / சக்தி',
+          label: 'Power',
           value: { value: '750 Watts', source: InformationSource.SellerVoice, confidence: 0.98, createdAt: new Date().toISOString() },
           order: 1,
         },
         {
           key: 'jarCount',
-          label: 'No. of Jars / ஜார்கள் எண்ணிக்கை',
+          label: 'No. of Jars',
           value: { value: '3 Stainless Steel Jars', source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
           order: 2,
         },
         {
           key: 'warranty',
-          label: 'Warranty / உத்தரவாதம்',
+          label: 'Warranty',
           value: { value: '2 Years Manufacturer Warranty', source: InformationSource.AIInference, confidence: 0.95, createdAt: new Date().toISOString() },
           order: 3,
         },
@@ -466,7 +471,7 @@ export class AIParserService {
       brand = 'EthnicStyle';
       model = 'Festive Collection 2026';
       productName = 'Men 100% Pure Breathable Cotton Kurta Shirt';
-      categoryName = 'Fashion / ஆடைகள் & ஆடை அணிகலன்கள்';
+      categoryName = 'Fashion';
       subCategoryName = "Men's Ethnic Apparel";
       productType = 'Kurta Shirt';
 
@@ -483,19 +488,19 @@ export class AIParserService {
       specifications = [
         {
           key: 'fabric',
-          label: 'Fabric / துணி வகை',
+          label: 'Fabric',
           value: { value: '100% Pure Cotton', source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
           order: 1,
         },
         {
           key: 'pattern',
-          label: 'Pattern / மாடல்',
+          label: 'Pattern',
           value: { value: 'Solid Classic', source: InformationSource.Vision, confidence: 0.95, createdAt: new Date().toISOString() },
           order: 2,
         },
         {
           key: 'care',
-          label: 'Care Instructions / பராமரிப்பு',
+          label: 'Care Instructions',
           value: { value: 'Machine Wash Soft', source: InformationSource.AIInference, confidence: 0.90, createdAt: new Date().toISOString() },
           order: 3,
         },
@@ -515,7 +520,7 @@ export class AIParserService {
       brand = 'SmartTech';
       model = 'Pro Series';
       productName = 'Smart High Resolution Display Device with AI Sensor';
-      categoryName = 'Electronics / மின்னணு சாதனங்கள்';
+      categoryName = 'Electronics';
       subCategoryName = 'Gadgets & Tech';
       productType = 'Smart Device';
 
@@ -532,13 +537,13 @@ export class AIParserService {
       specifications = [
         {
           key: 'display',
-          label: 'Display / திரை',
+          label: 'Display',
           value: { value: 'HD Touch Display', source: InformationSource.Vision, confidence: 0.92, createdAt: new Date().toISOString() },
           order: 1,
         },
         {
           key: 'warranty',
-          label: 'Warranty / உத்தரவாதம்',
+          label: 'Warranty',
           value: { value: '1 Year Warranty', source: InformationSource.SellerVoice, confidence: 0.95, createdAt: new Date().toISOString() },
           order: 2,
         },
@@ -550,10 +555,12 @@ export class AIParserService {
     else {
       const translatedObj = this.translateTamilToEnglish(rawText);
       const translatedEnglish = translatedObj.englishTranslation;
+      // Strip any remaining Tamil characters from the product name
+      const cleanEnglish = translatedEnglish.replace(/[\u0B80-\u0BFF]/g, '').replace(/\s+/g, ' ').trim();
 
       productName = `Special Offer E-Commerce Product (₹${price})`;
       shortDescription = `Special limited-time offer deal. Original MRP ₹${mrp}, now available at deal price ₹${price}.`;
-      description = `Special Product Offer: ${translatedEnglish}. Original price ₹${mrp} discounted to ₹${price}. Guaranteed quality inventory sourced directly from verified store.`;
+      description = `Special Product Offer: ${cleanEnglish}. Original price ₹${mrp} discounted to ₹${price}. Guaranteed quality inventory sourced directly from verified store.`;
 
       highlights = [
         `💰 Special Offer Deal Price: ₹${price} (MRP ₹${mrp})`,
@@ -564,20 +571,20 @@ export class AIParserService {
       specifications = [
         {
           key: 'offer_price',
-          label: 'Offer Price / ஆஃபர் விலை',
+          label: 'Offer Price',
           value: { value: `₹${price}`, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
           order: 1,
         },
         {
           key: 'mrp',
-          label: 'Original MRP / அசல் விலை',
+          label: 'Original MRP',
           value: { value: `₹${mrp}`, source: InformationSource.SellerVoice, confidence: 0.99, createdAt: new Date().toISOString() },
           order: 2,
         },
         {
           key: 'availability',
-          label: 'Availability / ஸ்டாக் நிலை',
-          value: { value: 'In Stock (உண்டு)', source: InformationSource.SellerVoice, confidence: 0.95, createdAt: new Date().toISOString() },
+          label: 'Availability',
+          value: { value: 'In Stock', source: InformationSource.SellerVoice, confidence: 0.95, createdAt: new Date().toISOString() },
           order: 3,
         },
       ];
