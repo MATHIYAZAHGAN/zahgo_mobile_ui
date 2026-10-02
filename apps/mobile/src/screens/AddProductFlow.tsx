@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,15 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { useTranslation } from 'react-i18next';
 import { theme } from '../config/theme';
 import { useProductStore } from '../store/productStore';
+import { useLanguageStore } from '../store/languageStore';
 import { AIParserService } from '../services/aiParserService';
 import { StudioImageProcessor } from '../utils/studioImageProcessor';
 import { VoiceRecognitionService } from '../services/voiceRecognitionService';
@@ -25,28 +29,18 @@ import {
   AssistantEngineResult,
 } from '../services/productAssistantEngine';
 
+const { width } = Dimensions.get('window');
+
 interface AddProductFlowProps {
   editProductId?: string | null;
   onCancel: () => void;
   onFinish: () => void;
 }
 
-const SAMPLE_VOICE_TRANSCRIPTS = [
-  {
-    label: '🎧 Zebronics Earphones Prompt',
-    text: 'Zebronics Zeb-Bro C Type-C earphones with in-line mic price 399 rupees 1 year warranty',
-  },
-  {
-    label: '🎙️ Tamil Mixer Prompt',
-    text: 'பட்டர்ஃப்ளை மிக்ஸி 750 வாட்ஸ் 3 ஜார் 1 வருஷம் வாரண்டி விலை 4200 ரூபாய்',
-  },
-  {
-    label: '👕 English Kurta Prompt',
-    text: 'Men navy blue pure cotton kurta shirt size L price 899 rupees best quality',
-  },
-];
-
 export default function AddProductFlow({ editProductId, onCancel, onFinish }: AddProductFlowProps) {
+  const { t } = useTranslation();
+  const { language } = useLanguageStore();
+
   const {
     currentFlowStep,
     capturedImages,
@@ -61,108 +55,50 @@ export default function AddProductFlow({ editProductId, onCancel, onFinish }: Ad
     isLoading,
   } = useProductStore();
 
-  const [selectedPhoto, setSelectedPhoto] = useState<string>(
-    capturedImages[0] || ''
-  );
-  
-  // Amazon Studio Background Removal State
-  const [backgroundMode, setBackgroundMode] = useState<'amazon_white' | 'gradient' | 'original'>('amazon_white');
+  const [selectedPhoto, setSelectedPhoto] = useState<string>(capturedImages[0] || '');
   const [isProcessingBg, setIsProcessingBg] = useState(false);
-
-  // Microphone & Speech Recognition State
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
-  const [recordingObject, setRecordingObject] = useState<any | null>(null);
+  const [liveTranslation, setLiveTranslation] = useState('');
 
-  // Live Tamil to English Translation
-  const [liveTranslation, setLiveTranslation] = useState<string>('');
-
-  // Product Assistant Guided Conversation State
+  // AI Conversation state
   const [productDraft, setProductDraft] = useState<ProductDraftState>({});
   const [inputText, setInputText] = useState('');
+  const initialAiMessage = 'Hello! Tell me about the product you want to add.';
   const [chatTurns, setChatTurns] = useState<AssistantChatTurn[]>([
     {
       id: '1',
       sender: 'ai',
-      text: 'வணக்கம்! உங்கள் பொருளின் பெயர் அல்லது விவரத்தைக் கூறவும். (e.g. "ஒரு Remote Control Car இருக்கு 10 pieces price 500")',
+      text: initialAiMessage,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       options: [
-        { label: '🧸 Toys & Games', value: 'Toys' },
         { label: '⚡ Electronics', value: 'Electronics' },
         { label: '👕 Fashion', value: 'Fashion' },
+        { label: '🧸 Toys', value: 'Toys' },
         { label: '🍳 Kitchen', value: 'Home & Kitchen' },
       ],
     },
   ]);
-
   const [assistantResult, setAssistantResult] = useState<AssistantEngineResult>(
     ProductAssistantEngine.evaluateAssistantState({})
   );
 
-  const processAssistantUtterance = (userInput: string) => {
-    if (!userInput || !userInput.trim()) return;
-
-    const userText = userInput.trim();
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const userTurn: AssistantChatTurn = {
-      id: Date.now().toString(),
-      sender: 'seller',
-      text: userText,
-      timestamp: timeStr,
-    };
-
-    const extracted = ProductAssistantEngine.parseUtterance(userText, productDraft);
-    console.log('[VOICE] AI extraction =', JSON.stringify(extracted));
-    const updatedDraft = { ...productDraft, ...extracted };
-    setProductDraft(updatedDraft);
-    useProductStore.setState({ productDraft: updatedDraft });
-
-    const evalRes = ProductAssistantEngine.evaluateAssistantState(updatedDraft);
-    setAssistantResult(evalRes);
-
-    let aiText = '';
-    if (evalRes.isComplete) {
-      aiText = 'சிறப்பு! அனைத்து விவரங்களும் சேகரிக்கப்பட்டன. இப்போது AI Catalog உருவாக்க தயார்! 🎉';
-    } else if (evalRes.nextQuestion) {
-      aiText = evalRes.nextQuestion.tamilQuestion;
-    } else {
-      aiText = 'கூடுதல் விவரங்களைத் தேர்வு செய்யவும் அல்லது கூறவும்.';
-    }
-
-    const aiTurn: AssistantChatTurn = {
-      id: (Date.now() + 1).toString(),
-      sender: 'ai',
-      text: aiText,
-      timestamp: timeStr,
-      extractedData: extracted,
-      options: evalRes.nextQuestion?.options,
-    };
-
-    setChatTurns((prev) => [...prev, userTurn, aiTurn]);
-    setInputText('');
-
-    const fullTranscript = Object.values(updatedDraft).filter(Boolean).join(' ');
-    setVoiceTranscript(fullTranscript);
-  };
-
-  // Editable Product details in Review Step
+  // Review step editable fields
   const [editTitle, setEditTitle] = useState('');
   const [editPrice, setEditPrice] = useState('');
   const [editMrp, setEditMrp] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Speech Recognition & TextInput ref
-  const speechRecognitionRef = useRef<any>(null);
-  const transcriptInputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
-  // Sync current product fields into edit state when entering review step
+  // Sync current product into edit fields
   useEffect(() => {
     if (currentProduct) {
       setEditTitle(currentProduct.name?.value || '');
-      setEditPrice(currentProduct.pricing?.price?.value?.toString() || '999');
-      setEditMrp(currentProduct.pricing?.mrp?.value?.toString() || '1499');
+      setEditPrice(String(currentProduct.pricing?.price?.value || ''));
+      setEditMrp(String(currentProduct.pricing?.mrp?.value || ''));
       setEditDesc(currentProduct.description || '');
     }
   }, [currentProduct]);
@@ -170,799 +106,736 @@ export default function AddProductFlow({ editProductId, onCancel, onFinish }: Ad
   // Update live translation whenever transcript changes
   useEffect(() => {
     if (voiceTranscript) {
-      const result = AIParserService.translateTamilToEnglish(voiceTranscript);
-      setLiveTranslation(result.englishTranslation);
+      const r = AIParserService.translateTamilToEnglish(voiceTranscript);
+      setLiveTranslation(r.englishTranslation);
     } else {
       setLiveTranslation('');
     }
   }, [voiceTranscript]);
 
-  // Recording Timer
+  // Recording timer
   useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setInterval>;
     if (isRecording) {
-      timer = setInterval(() => {
-        setRecordDuration((prev) => prev + 1);
-      }, 1000);
+      timer = setInterval(() => setRecordDuration((d) => d + 1), 1000);
     } else {
       setRecordDuration(0);
     }
     return () => clearInterval(timer);
   }, [isRecording]);
 
-  // Clean up recording object
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (recordingObject) {
-        recordingObject.stopAndUnloadAsync().catch(() => {});
+      if (VoiceRecognitionService.isRecording()) {
+        VoiceRecognitionService.stopRecognition().catch(() => {});
       }
     };
-  }, [recordingObject]);
+  }, []);
 
-  // Process Studio White Background Removal
-  const applyStudioBackgroundRemoval = async (photoUri: string) => {
-    setSelectedPhoto(photoUri);
+  // Scroll to bottom of chat
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, []);
+
+  // ---------- PHOTO STEP ----------
+
+  const applyStudioBg = async (uri: string) => {
+    setSelectedPhoto(uri);
     setIsProcessingBg(true);
     try {
-      const studioUri = await StudioImageProcessor.removeBackground(photoUri);
+      const studioUri = await StudioImageProcessor.removeBackground(uri);
       setSelectedPhoto(studioUri);
       setCapturedImages([studioUri]);
-    } catch (e) {
-      setSelectedPhoto(photoUri);
-      setCapturedImages([photoUri]);
+    } catch {
+      setSelectedPhoto(uri);
+      setCapturedImages([uri]);
     } finally {
       setIsProcessingBg(false);
     }
   };
 
-  // Photo Capture via Camera
   const handleTakePhoto = async () => {
-    try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Camera permission is required to capture product photos.');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.9,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        const photoUri = result.assets[0].uri;
-        await applyStudioBackgroundRemoval(photoUri);
-      }
-    } catch (err) {
-      console.warn('Camera error:', err);
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      Alert.alert(t('common.error'), t('addProduct.cameraPermission'));
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      await applyStudioBg(result.assets[0].uri);
     }
   };
 
-  // Photo Selection via Gallery
   const handlePickGallery = async () => {
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Gallery permission is required to choose product photos.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.9,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        const photoUri = result.assets[0].uri;
-        await applyStudioBackgroundRemoval(photoUri);
-      }
-    } catch (err) {
-      console.warn('Gallery error:', err);
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert(t('common.error'), t('addProduct.galleryPermission'));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      await applyStudioBg(result.assets[0].uri);
     }
   };
 
-  // Confirm Photo & Move to Voice Step
   const handleConfirmPhoto = () => {
     setCapturedImages([selectedPhoto]);
     useProductStore.setState({ currentFlowStep: 'voice' });
   };
 
-  // Dedicated Android / Mobile Microphone Diagnostic Test Button
-  const [isTestingMic, setIsTestingMic] = useState(false);
-  const handleTestMicrophone = async () => {
-    setIsTestingMic(true);
-    try {
-      const hasPerm = await VoiceRecognitionService.requestPermissions();
-      if (!hasPerm) {
-        Alert.alert('Permission Denied', 'Microphone permission was denied on this device.');
-        setIsTestingMic(false);
-        return;
+  // ---------- VOICE STEP ----------
+
+  const processAssistantUtterance = useCallback(
+    (userInput: string) => {
+      const text = userInput.trim();
+      if (!text) return;
+
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const userTurn: AssistantChatTurn = {
+        id: Date.now().toString(),
+        sender: 'seller',
+        text,
+        timestamp: timeStr,
+      };
+
+      const extracted = ProductAssistantEngine.parseUtterance(text, productDraft);
+      const updatedDraft = { ...productDraft, ...extracted };
+      setProductDraft(updatedDraft);
+      useProductStore.setState({ productDraft: updatedDraft });
+
+      const evalRes = ProductAssistantEngine.evaluateAssistantState(updatedDraft);
+      setAssistantResult(evalRes);
+
+      let aiText: string;
+      if (evalRes.isComplete) {
+        aiText = 'Great! All details collected. Ready to generate your AI catalog! 🎉';
+      } else if (evalRes.nextQuestion) {
+        aiText = evalRes.nextQuestion.englishQuestion;
+      } else {
+        aiText = 'Please provide more details.';
       }
 
-      const started = await VoiceRecognitionService.startRecognition(
-        { language: 'ta-IN' },
-        () => {},
-        (err) => {
-          Alert.alert('Microphone Error', err);
-          setIsTestingMic(false);
-        }
-      );
+      const aiTurn: AssistantChatTurn = {
+        id: (Date.now() + 1).toString(),
+        sender: 'ai',
+        text: aiText,
+        timestamp: timeStr,
+        extractedData: extracted,
+        options: evalRes.nextQuestion?.options,
+      };
 
-      if (!started) {
-        Alert.alert('Recording Failed', 'Native microphone recorder could not be started.');
-        setIsTestingMic(false);
-        return;
-      }
+      setChatTurns((prev) => [...prev, userTurn, aiTurn]);
+      setInputText('');
+      scrollToBottom();
 
-      // Record for 4 seconds test
-      setTimeout(async () => {
-        const uri = await VoiceRecognitionService.stopRecognition();
-        setIsTestingMic(false);
-        if (uri) {
-          Alert.alert('Audio Captured Successfully! 🎉', `Audio File URI:\n${uri}`);
-        } else {
-          Alert.alert('Microphone Recording Failed ❌', 'Audio URI returned null. Please verify Android permissions.');
-        }
-      }, 4000);
-    } catch (e: any) {
-      setIsTestingMic(false);
-      Alert.alert('Test Error', e?.message || 'Mic test failed');
-    }
-  };
+      const fullTranscript = Object.values(updatedDraft).filter(Boolean).join(' ');
+      setVoiceTranscript(fullTranscript);
+    },
+    [productDraft, language, setVoiceTranscript, scrollToBottom]
+  );
 
-  // Continuous Real-Time Speech Recognition & Native Microphone Toggle
   const handleToggleRecord = async () => {
     if (isRecording) {
-      // STOP RECORDING
       setIsRecording(false);
       setIsTranscribingVoice(true);
 
       try {
         const audioUri = await VoiceRecognitionService.stopRecognition();
-        console.log('[VOICE] Audio URI:', audioUri);
-
         if (!audioUri && Platform.OS !== 'web') {
-          Alert.alert(
-            'Voice recording failed ❌',
-            'Microphone did not produce an audio file. Please try again.'
-          );
+          Alert.alert(t('common.error'), t('addProduct.voiceEmpty'));
           setIsTranscribingVoice(false);
           return;
         }
 
-        // Send recorded audio directly to AI Speech-to-Text & Translation Engine
-        console.log('[VOICE] Sending audio to STT');
         const result = await AIParserService.processRecordedAudio(audioUri);
-        console.log('[VOICE] Transcript =', result.tamilTranscript);
-        
-        if (result.tamilTranscript && result.tamilTranscript.trim()) {
+        if (result.tamilTranscript?.trim()) {
           setVoiceTranscript(result.tamilTranscript);
           processAssistantUtterance(result.tamilTranscript);
         } else {
-          Alert.alert(
-            'குரல் அறியப்படவில்லை (Voice Not Detected)',
-            'தயவுசெய்து சத்தமாகவும் தெளிவாகவும் பேசவும், அல்லது கீழே உள்ள 1-Tap பொத்தான்களை தேர்வு செய்யவும்.'
-          );
+          Alert.alert('Voice Not Detected', t('addProduct.voiceEmpty'));
         }
-        if (result.englishTranslation) {
-          setLiveTranslation(result.englishTranslation);
-        }
-      } catch (err) {
-        console.warn('Audio transcription error:', err);
+        if (result.englishTranslation) setLiveTranslation(result.englishTranslation);
+      } catch {
+        Alert.alert(t('common.error'), t('addProduct.micError'));
       } finally {
         setIsTranscribingVoice(false);
       }
     } else {
-      // START RECORDING (PHYSICAL PHONE MIC RECORDING!)
       setRecordDuration(0);
-      transcriptInputRef.current?.blur();
-
-      const success = await VoiceRecognitionService.startRecognition(
-        {
-          language: 'ta-IN', // Tamil Speech Recognition
-          continuous: true,
-          interimResults: true,
-        },
-        (result) => {
-          if (result.transcript) {
-            setVoiceTranscript(result.transcript);
-          }
-        },
-        (error) => {
-          console.warn('[VOICE] Voice recognition error:', error);
+      const started = await VoiceRecognitionService.startRecognition(
+        { language: 'ta-IN', continuous: true, interimResults: true },
+        (res) => { if (res.transcript) setVoiceTranscript(res.transcript); },
+        (err) => {
           setIsRecording(false);
-          Alert.alert('Microphone Error', error);
+          Alert.alert(t('common.error'), err || t('addProduct.micError'));
         }
       );
-
-      if (success) {
+      if (started) {
         setIsRecording(true);
       } else {
-        setIsRecording(false);
-        Alert.alert(
-          'Microphone Failed ❌',
-          'Voice recording could not start. Please check Android microphone permissions.'
-        );
+        Alert.alert(t('common.error'), t('addProduct.micPermission'));
       }
     }
   };
 
-  // Step-by-Step Back Handlers
-  const handleGoBackFromVoice = () => {
-    useProductStore.setState({ currentFlowStep: 'camera' });
-  };
+  const handleOptionChipSelect = useCallback(
+    (fieldKey: keyof ProductDraftState, optValue: string, optLabel: string) => {
+      const updatedDraft = { ...productDraft, [fieldKey]: optValue };
+      setProductDraft(updatedDraft);
+      useProductStore.setState({ productDraft: updatedDraft });
 
-  const handleGoBackFromReview = () => {
-    useProductStore.setState({ currentFlowStep: 'voice' });
-  };
+      const evalRes = ProductAssistantEngine.evaluateAssistantState(updatedDraft);
+      setAssistantResult(evalRes);
 
-  // Save changes and Publish
-  const handlePublish = async () => {
-    if (currentProduct) {
-      const priceVal = parseFloat(editPrice) || currentProduct.pricing?.price?.value || 999;
-      const mrpVal = parseFloat(editMrp) || currentProduct.pricing?.mrp?.value || priceVal * 1.35;
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      let nextText: string;
+      if (evalRes.isComplete) {
+        nextText = 'Perfect! All details collected. 🎉';
+      } else if (evalRes.nextQuestion) {
+        nextText = evalRes.nextQuestion.englishQuestion;
+      } else {
+        nextText = 'Continue.';
+      }
 
-      updateCurrentProduct({
-        name: { ...currentProduct.name, value: editTitle || currentProduct.name?.value },
-        description: editDesc || currentProduct.description,
-        pricing: {
-          ...currentProduct.pricing,
-          price: { ...currentProduct.pricing.price, value: priceVal },
-          mrp: { ...currentProduct.pricing.mrp, value: mrpVal },
+      setChatTurns((prev) => [
+        ...prev,
+        { id: `s-${Date.now()}`, sender: 'seller', text: optLabel, timestamp: timeStr },
+        {
+          id: `a-${Date.now()}`,
+          sender: 'ai',
+          text: nextText,
+          timestamp: timeStr,
+          options: evalRes.nextQuestion?.options,
         },
-      });
+      ]);
+      scrollToBottom();
+    },
+    [productDraft, language, scrollToBottom]
+  );
 
-      const success = await publishProduct(currentProduct.id);
-      
-      if (!success) {
-        const errorStore = useProductStore.getState();
-        Alert.alert(
-          'Publish Failed',
-          errorStore.error || 'Failed to publish product to server. Please check your connection and try again.',
-          [{ text: 'OK' }]
-        );
-      }
+  // ---------- REVIEW STEP ----------
+
+  const validateReview = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!editTitle.trim()) errors.title = t('addProduct.validationNameRequired');
+    const priceNum = parseFloat(editPrice);
+    if (!editPrice || isNaN(priceNum) || priceNum <= 0)
+      errors.price = t('addProduct.validationPriceRequired');
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handlePublish = async () => {
+    if (!validateReview()) return;
+    if (!currentProduct) return;
+
+    const priceVal = parseFloat(editPrice) || currentProduct.pricing?.price?.value || 0;
+    const mrpVal = parseFloat(editMrp) || currentProduct.pricing?.mrp?.value || priceVal * 1.35;
+
+    updateCurrentProduct({
+      name: { ...currentProduct.name, value: editTitle.trim() },
+      description: editDesc.trim(),
+      pricing: {
+        ...currentProduct.pricing,
+        price: { ...currentProduct.pricing.price, value: priceVal },
+        mrp: { ...currentProduct.pricing.mrp, value: mrpVal },
+        compareAtPrice: { ...currentProduct.pricing.compareAtPrice, value: mrpVal },
+      },
+    });
+
+    const success = await publishProduct(currentProduct.id);
+    if (!success) {
+      const err = useProductStore.getState().error;
+      Alert.alert(t('common.error'), err || t('errors.publishFailed'));
     }
   };
+
+  // ---------- NAVIGATION ----------
+
+  const stepLabel = (step: string) => {
+    switch (step) {
+      case 'camera': return t('addProduct.stepPhoto');
+      case 'voice': return t('addProduct.stepVoice');
+      case 'ai_processing': return t('addProduct.stepAI');
+      default: return t('addProduct.stepCatalog');
+    }
+  };
+
+  const steps = ['camera', 'voice', 'ai_processing', 'review'];
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Navigation Header Bar - Safe Inset Padding */}
+      {/* Step bar */}
       <View style={styles.flowBar}>
-        {currentFlowStep === 'camera' && (
-          <TouchableOpacity onPress={onCancel} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Exit</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={
+            currentFlowStep === 'camera'
+              ? onCancel
+              : currentFlowStep === 'voice'
+              ? () => useProductStore.setState({ currentFlowStep: 'camera' })
+              : currentFlowStep === 'review'
+              ? () => useProductStore.setState({ currentFlowStep: 'voice' })
+              : undefined
+          }
+          style={styles.backBtn}
+          disabled={currentFlowStep === 'ai_processing' || currentFlowStep === 'success'}
+        >
+          <Text style={styles.backBtnText}>
+            {currentFlowStep === 'camera' ? '✕' : '←'}
+          </Text>
+        </TouchableOpacity>
 
-        {currentFlowStep === 'voice' && (
-          <TouchableOpacity onPress={handleGoBackFromVoice} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Photo</Text>
-          </TouchableOpacity>
-        )}
-
-        {currentFlowStep === 'ai_processing' && (
-          <View style={styles.backBtnDisabled}>
-            <Text style={styles.backBtnDisabledText}>🤖 AI Processing...</Text>
-          </View>
-        )}
-
-        {currentFlowStep === 'review' && (
-          <TouchableOpacity onPress={handleGoBackFromReview} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Voice</Text>
-          </TouchableOpacity>
-        )}
-
-        {currentFlowStep === 'success' && (
-          <TouchableOpacity onPress={onFinish} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Dashboard</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Step Indicators */}
-        <View style={styles.stepBadges}>
-          <View style={[styles.stepDot, currentFlowStep === 'camera' && styles.stepDotActive]}>
-            <Text style={[styles.stepDotText, currentFlowStep === 'camera' && styles.stepDotTextActive]}>1. 📸 Photo</Text>
-          </View>
-          <Text style={styles.stepArrow}>→</Text>
-          <View style={[styles.stepDot, currentFlowStep === 'voice' && styles.stepDotActive]}>
-            <Text style={[styles.stepDotText, currentFlowStep === 'voice' && styles.stepDotTextActive]}>2. 🎙️ Voice</Text>
-          </View>
-          <Text style={styles.stepArrow}>→</Text>
-          <View style={[styles.stepDot, currentFlowStep === 'ai_processing' && styles.stepDotActive]}>
-            <Text style={[styles.stepDotText, currentFlowStep === 'ai_processing' && styles.stepDotTextActive]}>3. 🤖 AI</Text>
-          </View>
-          <Text style={styles.stepArrow}>→</Text>
-          <View style={[styles.stepDot, (currentFlowStep === 'review' || currentFlowStep === 'success') && styles.stepDotActive]}>
-            <Text style={[styles.stepDotText, (currentFlowStep === 'review' || currentFlowStep === 'success') && styles.stepDotTextActive]}>4. 🚀 Catalog</Text>
-          </View>
+        <View style={styles.stepDots}>
+          {steps.map((s, i) => (
+            <View key={s} style={styles.stepDotWrapper}>
+              <View
+                style={[
+                  styles.stepDot,
+                  currentFlowStep === s && styles.stepDotActive,
+                  steps.indexOf(currentFlowStep) > i && styles.stepDotDone,
+                ]}
+              >
+                <Text style={[styles.stepDotText, currentFlowStep === s && styles.stepDotTextActive]}>
+                  {i + 1}
+                </Text>
+              </View>
+              {i < steps.length - 1 && <View style={styles.stepLine} />}
+            </View>
+          ))}
         </View>
 
-        <TouchableOpacity onPress={onCancel} style={styles.exitBtn}>
-          <Text style={styles.exitBtnText}>✕</Text>
-        </TouchableOpacity>
+        <Text style={styles.stepLabel}>{stepLabel(currentFlowStep)}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* STEP 1: CAMERA / PHOTO CAPTURE & AMAZON STUDIO BACKGROUND CLEANUP */}
-        {currentFlowStep === 'camera' && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>பொருளின் புகைப்படம் (Product Photo) 📸</Text>
-            <Text style={styles.stepSub}>
-              அமேசான் ஸ்டுடியோ போன்ற தூய்மையான வெள்ளை பின்புலத்துடன் (Amazon Studio White Background) படம் எடுக்கவும்
-            </Text>
-
-            {/* Studio Photo Frame */}
-            <View style={styles.photoFrame}>
-              {selectedPhoto ? (
-                <Image source={{ uri: selectedPhoto }} style={styles.previewImage} />
-              ) : (
-                <View style={styles.emptyPhotoContainer}>
-                  <Text style={{ fontSize: 44, marginBottom: 6 }}>📸</Text>
-                  <Text style={styles.emptyPhotoTitle}>பொருளின் படம் எடுக்கவும்</Text>
-                  <Text style={styles.emptyPhotoSub}>
-                    (Tap Camera or Gallery button below to add photo)
-                  </Text>
-                </View>
-              )}
-
-              {isProcessingBg && (
-                <View style={styles.bgLoadingOverlay}>
-                  <ActivityIndicator size="large" color="#3B82F6" style={{ marginBottom: 10 }} />
-                  <Text style={styles.bgLoadingTitle}>✨ AI Studio Background Removal</Text>
-                  <Text style={styles.bgLoadingSub}>
-                    அமேசான் பின்புலம் வெள்ளை நிறத்தில் மாற்றப்படுகிறது...
-                  </Text>
-                </View>
-              )}
-
-              {!isProcessingBg && selectedPhoto ? (
-                <View style={styles.qualityCheckBadge}>
-                  <Text style={styles.qualityText}>
-                    ✨ Amazon Studio White (#FFFFFF) Active
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Studio Background Selector */}
-            <Text style={styles.sectionLabel}>பின்புல அமேசான் ஸ்டுடியோ மோட் (Studio Mode):</Text>
-            <View style={styles.studioBgRow}>
-              <TouchableOpacity
-                style={[styles.studioChip, backgroundMode === 'amazon_white' && styles.studioChipActive]}
-                onPress={() => setBackgroundMode('amazon_white')}
-              >
-                <Text style={[styles.studioChipText, backgroundMode === 'amazon_white' && styles.studioChipTextActive]}>
-                  ⬜ Amazon Studio White
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.studioChip, backgroundMode === 'gradient' && styles.studioChipActive]}
-                onPress={() => setBackgroundMode('gradient')}
-              >
-                <Text style={[styles.studioChipText, backgroundMode === 'gradient' && styles.studioChipTextActive]}>
-                  🌫️ Studio Soft Shadow
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.studioChip, backgroundMode === 'original' && styles.studioChipActive]}
-                onPress={() => setBackgroundMode('original')}
-              >
-                <Text style={[styles.studioChipText, backgroundMode === 'original' && styles.studioChipTextActive]}>
-                  📸 Original
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Camera & Gallery Action Buttons */}
-            <View style={styles.photoActionRow}>
-              <TouchableOpacity
-                style={[styles.photoOptionBtn, { backgroundColor: theme.colors.primary }]}
-                onPress={handleTakePhoto}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.photoOptionIcon}>📸</Text>
-                <Text style={styles.photoOptionText}>Take Photo / கேமரா</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.photoOptionBtn, { backgroundColor: '#4F46E5' }]}
-                onPress={handlePickGallery}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.photoOptionIcon}>🖼️</Text>
-                <Text style={styles.photoOptionText}>Choose Gallery / கேலரி</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.primaryActionButton}
-              onPress={handleConfirmPhoto}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.primaryActionText}>Confirm Studio Photo & Next: Voice →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* STEP 2: GUIDED CONVERSATIONAL AI PRODUCT LISTING ASSISTANT */}
-        {currentFlowStep === 'voice' && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>AI Product Assistant 🤖 (குரல் வழிகாட்டி)</Text>
-            <Text style={styles.stepSub}>
-              உங்கள் பொருளைப் பற்றி தமிழில் பேசவும் அல்லது தேர்வு செய்யவும். AI உங்களுக்கு வழிகாட்டும்!
-            </Text>
-
-            {/* Live Progress Bar Card */}
-            <View style={styles.assistantProgressCard}>
-              <View style={styles.progressHeaderRow}>
-                <Text style={styles.progressTitle}>Product Details Completion</Text>
-                <Text style={styles.progressPercentText}>{assistantResult.progressPercent}% Complete</Text>
-              </View>
-              <View style={styles.progressBarTrack}>
-                <View style={[styles.progressBarFill, { width: `${assistantResult.progressPercent}%` }]} />
-              </View>
-              <View style={styles.collectedBadgesRow}>
-                {assistantResult.collectedFields.map((field) => (
-                  <View key={field.key} style={styles.collectedBadge}>
-                    <Text style={styles.collectedBadgeText}>✓ {field.label}: {field.value}</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ===== STEP 1: PHOTO ===== */}
+          {currentFlowStep === 'camera' && (
+            <View>
+              <Text style={styles.stepTitle}>{t('addProduct.photoTitle')}</Text>
+              <Text style={styles.stepSub}>{t('addProduct.photoSubtitle')}</Text>
+              <View style={styles.photoFrame}>
+                {selectedPhoto ? (
+                  <Image source={{ uri: selectedPhoto }} style={styles.previewImage} resizeMode="contain" />
+                ) : (
+                  <View style={styles.emptyPhoto}>
+                    <Text style={styles.emptyPhotoIcon}>📸</Text>
+                    <Text style={styles.emptyPhotoText}>Capture product photo</Text>
                   </View>
-                ))}
-                {assistantResult.remainingFields.map((field) => (
-                  <View key={field.key} style={styles.remainingBadge}>
-                    <Text style={styles.remainingBadgeText}>○ {field.label}</Text>
+                )}
+                {isProcessingBg && (
+                  <View style={styles.processingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.processingText}>{t('addProduct.aiProcessingTitle')}</Text>
+                    <Text style={styles.processingSubText}>{t('addProduct.aiProcessingSubtitle')}</Text>
                   </View>
-                ))}
+                )}
+                {!isProcessingBg && !!selectedPhoto && (
+                  <View style={styles.studioBadge}>
+                    <Text style={styles.studioBadgeText}>✨ Studio White Active</Text>
+                  </View>
+                )}
               </View>
-            </View>
-
-            {/* Conversational Assistant Transcript */}
-            <View style={styles.chatContainer}>
-              {chatTurns.map((turn) => (
-                <View
-                  key={turn.id}
-                  style={[
-                    styles.chatBubble,
-                    turn.sender === 'ai' ? styles.chatBubbleAi : styles.chatBubbleSeller,
-                  ]}
+              <View style={styles.photoActionRow}>
+                <TouchableOpacity
+                  style={[styles.photoBtn, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleTakePhoto}
+                  accessibilityRole="button"
                 >
-                  <Text style={turn.sender === 'ai' ? styles.chatTextAi : styles.chatTextSeller}>
-                    {turn.sender === 'ai' ? '🤖 ' : '🗣️ '}
-                    {turn.text}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                  <Text style={styles.photoBtnIcon}>📸</Text>
+                  <Text style={styles.photoBtnText}>{t('addProduct.takePhoto')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.photoBtn, { backgroundColor: '#4F46E5' }]}
+                  onPress={handlePickGallery}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.photoBtnIcon}>🖼️</Text>
+                  <Text style={styles.photoBtnText}>{t('addProduct.chooseGallery')}</Text>
+                </TouchableOpacity>
+              </View>
 
-            {/* Dynamic Option Chips Bar for Current Question */}
-            {assistantResult.nextQuestion?.options && (
-              <View style={styles.chipsSection}>
-                <Text style={styles.chipsSectionLabel}>தேர்வு செய்யவும் (1-Tap Option Selection):</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-                  {assistantResult.nextQuestion.options.map((opt, idx) => (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={handleConfirmPhoto}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryBtnText}>{t('addProduct.confirmPhoto')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ===== STEP 2: VOICE / CONVERSATION ===== */}
+          {currentFlowStep === 'voice' && (
+            <View>
+              <Text style={styles.stepTitle}>{t('addProduct.voiceTitle')}</Text>
+              <Text style={styles.stepSub}>{t('addProduct.voiceSubtitle')}</Text>
+
+              {/* Progress bar */}
+              <View style={styles.progressCard}>
+                <View style={styles.progressHeader}>
+                  <Text style={styles.progressTitle}>{t('addProduct.progressTitle')}</Text>
+                  <Text style={styles.progressPercent}>{assistantResult.progressPercent}%</Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${assistantResult.progressPercent}%` }]} />
+                </View>
+                <View style={styles.badgeRow}>
+                  {assistantResult.collectedFields.map((f) => (
+                    <View key={f.key} style={styles.collectedBadge}>
+                      <Text style={styles.collectedBadgeText}>✓ {f.label}</Text>
+                    </View>
+                  ))}
+                  {assistantResult.remainingFields.map((f) => (
+                    <View key={f.key} style={styles.remainingBadge}>
+                      <Text style={styles.remainingBadgeText}>○ {f.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* Chat */}
+              <View style={styles.chatContainer}>
+                {chatTurns.map((turn) => (
+                  <View
+                    key={turn.id}
+                    style={[
+                      styles.bubble,
+                      turn.sender === 'ai' ? styles.bubbleAi : styles.bubbleSeller,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.bubbleText,
+                        turn.sender === 'ai' ? styles.bubbleTextAi : styles.bubbleTextSeller,
+                      ]}
+                    >
+                      {turn.sender === 'ai' ? '🤖 ' : '🗣️ '}
+                      {turn.text}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Option chips for current question */}
+              {assistantResult.nextQuestion?.options && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipsScroll}
+                  style={{ marginBottom: 12 }}
+                >
+                  {assistantResult.nextQuestion.options.map((opt, i) => (
                     <TouchableOpacity
-                      key={idx}
-                      style={styles.optionChipBtn}
-                      onPress={() => {
-                        // Directly set the field value based on the current question
-                        const fieldKey = assistantResult.nextQuestion!.fieldKey;
-                        const currentDraft = useProductStore.getState().productDraft || {};
-                        const updatedDraft = {
-                          ...currentDraft,
-                          [fieldKey]: opt.value
-                        };
-                        
-                        useProductStore.setState({ productDraft: updatedDraft });
-                        
-                        const evalRes = ProductAssistantEngine.evaluateAssistantState(updatedDraft);
-                        setAssistantResult(evalRes);
-                        
-                        // Add chat message showing selection
-                        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        const newSellerMessage: AssistantChatTurn = {
-                          id: `seller-${Date.now()}`,
-                          sender: 'seller',
-                          text: opt.label,
-                          timestamp: timeStr,
-                        };
-                        
-                        let aiResponseText = '';
-                        if (evalRes.isComplete) {
-                          aiResponseText = 'சிறப்பு! அனைத்து விவரங்களும் சேகரிக்கப்பட்டன. இப்போது AI Catalog உருவாக்க தயார்! 🎉';
-                        } else if (evalRes.nextQuestion) {
-                          aiResponseText = evalRes.nextQuestion.tamilQuestion;
-                        } else {
-                          aiResponseText = 'கூடுதல் விவரங்களைத் தேர்வு செய்யவும்.';
-                        }
-                        
-                        const newAiMessage: AssistantChatTurn = {
-                          id: `ai-${Date.now()}`,
-                          sender: 'ai',
-                          text: aiResponseText,
-                          timestamp: timeStr,
-                          options: evalRes.nextQuestion?.options,
-                        };
-                        
-                        setChatTurns((prev) => [...prev, newSellerMessage, newAiMessage]);
-                      }}
-                      activeOpacity={0.8}
+                      key={i}
+                      style={styles.optionChip}
+                      onPress={() =>
+                        handleOptionChipSelect(
+                          assistantResult.nextQuestion!.fieldKey,
+                          opt.value,
+                          opt.label
+                        )
+                      }
+                      accessibilityRole="button"
                     >
                       <Text style={styles.optionChipText}>{opt.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-              </View>
-            )}
+              )}
+              {/* Mic + Text Input */}
+              <View style={styles.inputCard}>
+                <View style={styles.micRow}>
+                  <TouchableOpacity
+                    style={[styles.micBtn, isRecording && styles.micBtnRecording]}
+                    onPress={handleToggleRecord}
+                    accessibilityRole="button"
+                    accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+                  >
+                    <Text style={styles.micBtnIcon}>{isRecording ? '⏹️' : '🎙️'}</Text>
+                  </TouchableOpacity>
 
-            {/* Hybrid Microphone + Text Input Controls */}
-            <View style={styles.inputControlsCard}>
-              <View style={styles.micCircleContainer}>
-                <TouchableOpacity
-                  style={[styles.micCircleBtn, isRecording && styles.micCircleBtnRecording]}
-                  onPress={handleToggleRecord}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.micCircleIcon}>{isRecording ? '⏹️' : '🎙️'}</Text>
-                </TouchableOpacity>
+                  {isTranscribingVoice ? (
+                    <View style={styles.transcribingRow}>
+                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                      <Text style={styles.transcribingText}>{t('addProduct.processingAudio')}</Text>
+                    </View>
+                  ) : isRecording ? (
+                    <View style={styles.recordingRow}>
+                      <Text style={styles.recordingText}>
+                        {t('addProduct.recording')} ({recordDuration}s)
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.micHint}>{t('addProduct.tapMic')}</Text>
+                  )}
+                </View>
 
-                {isTranscribingVoice ? (
-                  <View style={styles.aiVoiceProcessingCard}>
-                    <ActivityIndicator size="small" color={theme.colors.primary} />
-                    <Text style={styles.aiVoiceProcessingText}>
-                      🤖 AI transcribing Tamil voice...
-                    </Text>
+                {/* Live voice transcript display */}
+                {voiceTranscript && !isRecording && !isTranscribingVoice && (
+                  <View style={styles.transcriptCard}>
+                    <Text style={styles.transcriptLabel}>Your voice:</Text>
+                    <Text style={styles.transcriptText}>{voiceTranscript}</Text>
+                    {liveTranslation && liveTranslation !== voiceTranscript && (
+                      <>
+                        <Text style={styles.translationLabel}>→ English:</Text>
+                        <Text style={styles.translationText}>{liveTranslation}</Text>
+                      </>
+                    )}
                   </View>
-                ) : isRecording ? (
-                  <View style={styles.recordingPulse}>
-                    <Text style={styles.recordingTimerText}>
-                      🔴 கேட்கிறது... ({recordDuration}s) - Speak Tamil/English Now!
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.micInstructionText}>
-                    தட்டவும் & பேசவும் (Tap Mic to Speak)
-                  </Text>
                 )}
 
-                {/* Diagnostic Mic Test Button */}
-                <TouchableOpacity
-                  style={{
-                    marginTop: 10,
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    backgroundColor: '#F1F5F9',
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: '#CBD5E1',
-                    alignSelf: 'center',
-                  }}
-                  onPress={handleTestMicrophone}
-                  disabled={isTestingMic}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>
-                    {isTestingMic ? '🎤 Diagnostic Recording (4s)...' : '🔧 Test Android Mic Capture'}
-                  </Text>
-                </TouchableOpacity>
+                {/* Text input */}
+                <View style={styles.textRow}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder={t('addProduct.typeHere')}
+                    placeholderTextColor={theme.colors.gray400}
+                    value={inputText}
+                    onChangeText={setInputText}
+                    onSubmitEditing={() => processAssistantUtterance(inputText)}
+                    returnKeyType="send"
+                    multiline={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.sendBtn}
+                    onPress={() => processAssistantUtterance(inputText)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.sendBtnText}>{t('addProduct.send')}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {/* Text Fallback Input */}
-              <View style={styles.textInputRow}>
-                <TextInput
-                  style={styles.hybridTextInput}
-                  placeholder="அல்லது இங்கு எழுதவும் (or type here)..."
-                  placeholderTextColor={theme.colors.gray400}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  onSubmitEditing={() => processAssistantUtterance(inputText)}
-                />
-                <TouchableOpacity
-                  style={styles.sendInputBtn}
-                  onPress={() => processAssistantUtterance(inputText)}
-                >
-                  <Text style={styles.sendInputBtnText}>Send ➔</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Quick Sample Prompts */}
-            <Text style={styles.sectionLabel}>மாதிரி குரல் பதிவுகள் (Quick Voice Prompts):</Text>
-            {SAMPLE_VOICE_TRANSCRIPTS.map((item, idx) => (
+              {/* Generate button */}
               <TouchableOpacity
-                key={idx}
-                style={styles.promptChip}
-                onPress={() => processAssistantUtterance(item.text)}
+                style={[
+                  styles.primaryBtn,
+                  !assistantResult.collectedFields.length && styles.primaryBtnDisabled,
+                ]}
+                onPress={runAIProcessing}
+                disabled={!assistantResult.collectedFields.length}
+                accessibilityRole="button"
               >
-                <Text style={styles.promptChipLabel}>{item.label}</Text>
-                <Text style={styles.promptChipText}>{item.text}</Text>
+                <Text style={styles.primaryBtnText}>{t('addProduct.generateAI')}</Text>
               </TouchableOpacity>
-            ))}
+            </View>
+          )}
 
-            {/* Continue to AI Processing */}
-            <TouchableOpacity
-              style={[
-                styles.primaryActionButton,
-                !assistantResult.collectedFields.length && { backgroundColor: theme.colors.gray400 },
-              ]}
-              onPress={runAIProcessing}
-              disabled={!assistantResult.collectedFields.length}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.primaryActionText}>
-                Generate AI E-Commerce Catalog 🤖 →
+          {/* ===== STEP 3: AI PROCESSING ===== */}
+          {currentFlowStep === 'ai_processing' && (
+            <View style={styles.aiProcessingContainer}>
+              <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginBottom: 16 }} />
+              <Text style={styles.aiTitle}>ZAH AI Processing 🤖</Text>
+              <Text style={styles.aiSub}>
+                Converting your voice input into a product catalog...
               </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* STEP 3: REAL MULTIMODAL AI CATALOG PROCESSING */}
-        {currentFlowStep === 'ai_processing' && (
-          <View style={styles.stepContainer}>
-            <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginVertical: 20 }} />
-            <Text style={styles.aiTitle}>ZAH Multimodal AI Processing 🤖</Text>
-            <Text style={styles.aiSub}>
-              அமேசான் தரத்தில் பின்புலம் நீக்கப்பட்டு, தமிழ் பேச்சு ஆங்கிலத்தில் மாற்றப்படுகிறது...
-            </Text>
-
-            <View style={styles.aiProgressList}>
-              <View style={styles.aiProgressRow}>
-                <Text style={styles.aiProgressCheck}>{aiProcessingStage >= 1 ? '✅' : '⏳'}</Text>
-                <Text style={styles.aiProgressText}>1. Amazon Studio White Background Removal</Text>
-              </View>
-
-              <View style={styles.aiProgressRow}>
-                <Text style={styles.aiProgressCheck}>{aiProcessingStage >= 2 ? '✅' : '⏳'}</Text>
-                <Text style={styles.aiProgressText}>2. Tamil Voice Speech NLP Parsing & Translation</Text>
-              </View>
-
-              <View style={styles.aiProgressRow}>
-                <Text style={styles.aiProgressCheck}>{aiProcessingStage >= 3 ? '✅' : '⏳'}</Text>
-                <Text style={styles.aiProgressText}>3. Technical Specs, Warranty, MRP & Feature Extraction</Text>
-              </View>
-
-              <View style={styles.aiProgressRow}>
-                <Text style={styles.aiProgressCheck}>{aiProcessingStage >= 4 ? '✅' : '⏳'}</Text>
-                <Text style={styles.aiProgressText}>4. Production Grade E-Commerce Catalog Ready</Text>
+              <View style={styles.aiStepList}>
+                {[
+                  '1. Studio background removal',
+                  '2. Voice NLP analysis',
+                  '3. Details extraction',
+                  '4. E-Commerce catalog ready',
+                ].map((step, i) => (
+                  <View key={i} style={styles.aiStepRow}>
+                    <Text style={styles.aiStepCheck}>
+                      {aiProcessingStage > i ? '✅' : aiProcessingStage === i ? '⏳' : '○'}
+                    </Text>
+                    <Text style={styles.aiStepText}>{step}</Text>
+                  </View>
+                ))}
               </View>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* STEP 4: AI CATALOG REVIEW & EDIT */}
-        {currentFlowStep === 'review' && currentProduct && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>AI உருவாக்கிய தயாரிப்பு பட்டியல் 📋</Text>
-            <Text style={styles.stepSub}>
-              அமேசான் ஸ்டுடியோ படம் மற்றும் தமிழ்-ஆங்கில விவரங்கள் சரிபார்க்கவும்
-            </Text>
+          {/* ===== STEP 4: REVIEW ===== */}
+          {currentFlowStep === 'review' && currentProduct && (
+            <View>
+              <Text style={styles.stepTitle}>{t('addProduct.reviewTitle')}</Text>
+              <Text style={styles.stepSub}>{t('addProduct.reviewSubtitle')}</Text>
 
-            {/* Generated Catalog Preview Card */}
-            <View style={styles.reviewCard}>
-              <View style={styles.studioWhiteImageContainer}>
-                <Image
-                  source={{
-                    uri:
-                      currentProduct.images?.[0]?.originalUrl ||
-                      'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=600',
+              <View style={styles.reviewCard}>
+                {/* Product image */}
+                {currentProduct.images?.[0]?.originalUrl ? (
+                  <View style={styles.reviewImageContainer}>
+                    <Image
+                      source={{ uri: currentProduct.images[0].originalUrl }}
+                      style={styles.reviewImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : null}
+
+                {/* Product Name */}
+                <Text style={styles.fieldLabel}>{t('addProduct.productName')} *</Text>
+                <TextInput
+                  style={[styles.editInput, validationErrors.title && styles.editInputError]}
+                  value={editTitle}
+                  onChangeText={(v) => {
+                    setEditTitle(v);
+                    if (validationErrors.title) setValidationErrors((e) => ({ ...e, title: '' }));
                   }}
-                  style={styles.reviewImage}
+                  placeholder={t('addProduct.enterProductName')}
+                  placeholderTextColor={theme.colors.gray400}
                 />
-                <View style={styles.amazonBadge}>
-                  <Text style={styles.amazonBadgeText}>📦 Amazon Studio Background</Text>
+                {!!validationErrors.title && (
+                  <Text style={styles.validationError}>{validationErrors.title}</Text>
+                )}
+
+                {/* Brand & Category (read-only display) */}
+                <View style={styles.reviewMetaRow}>
+                  {currentProduct.brand?.value ? (
+                    <View style={styles.metaChip}>
+                      <Text style={styles.metaChipLabel}>{t('addProduct.brand')}</Text>
+                      <Text style={styles.metaChipValue}>{currentProduct.brand.value}</Text>
+                    </View>
+                  ) : null}
+                  {currentProduct.categoryName?.value ? (
+                    <View style={styles.metaChip}>
+                      <Text style={styles.metaChipLabel}>{t('addProduct.category')}</Text>
+                      <Text style={styles.metaChipValue}>{currentProduct.categoryName.value}</Text>
+                    </View>
+                  ) : null}
                 </View>
+
+                {/* Pricing */}
+                <View style={styles.priceRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>{t('addProduct.price')} *</Text>
+                    <TextInput
+                      style={[styles.editInput, validationErrors.price && styles.editInputError]}
+                      keyboardType="numeric"
+                      value={editPrice}
+                      onChangeText={(v) => {
+                        setEditPrice(v);
+                        if (validationErrors.price) setValidationErrors((e) => ({ ...e, price: '' }));
+                      }}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.gray400}
+                    />
+                    {!!validationErrors.price && (
+                      <Text style={styles.validationError}>{validationErrors.price}</Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.fieldLabel}>{t('addProduct.mrp')}</Text>
+                    <TextInput
+                      style={styles.editInput}
+                      keyboardType="numeric"
+                      value={editMrp}
+                      onChangeText={setEditMrp}
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.gray400}
+                    />
+                  </View>
+                </View>
+
+                {/* Description */}
+                <Text style={styles.fieldLabel}>{t('addProduct.description')}</Text>
+                <TextInput
+                  style={[styles.editInput, styles.editInputMultiline]}
+                  multiline
+                  numberOfLines={3}
+                  value={editDesc}
+                  onChangeText={setEditDesc}
+                  placeholder={t('addProduct.productDescription')}
+                  placeholderTextColor={theme.colors.gray400}
+                  textAlignVertical="top"
+                />
+
+                {/* Highlights */}
+                {currentProduct.highlights?.length > 0 && (
+                  <>
+                    <Text style={styles.reviewSectionTitle}>{t('addProduct.highlights')}</Text>
+                    {currentProduct.highlights.map((h, i) => (
+                      <Text key={i} style={styles.bulletText}>• {h}</Text>
+                    ))}
+                  </>
+                )}
+
+                {/* Specifications */}
+                {currentProduct.specifications?.length > 0 && (
+                  <>
+                    <Text style={styles.reviewSectionTitle}>{t('addProduct.specifications')}</Text>
+                    {currentProduct.specifications.map((spec, i) => (
+                      <View key={i} style={styles.specRow}>
+                        <Text style={styles.specLabel}>{spec.label}</Text>
+                        <Text style={styles.specValue}>{spec.value?.value}</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
               </View>
 
-              <Text style={styles.reviewCategory}>{currentProduct.categoryName?.value}</Text>
-
-              {/* Title Input */}
-              <Text style={styles.fieldLabel}>தயாரிப்பு பெயர் (Product Title):</Text>
-              <TextInput
-                style={styles.textInputEdit}
-                value={editTitle}
-                onChangeText={setEditTitle}
-              />
-
-              {/* Pricing Row Inputs */}
-              <View style={styles.priceEditRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>விற்பனை விலை (Price ₹):</Text>
-                  <TextInput
-                    style={styles.textInputEdit}
-                    keyboardType="numeric"
-                    value={editPrice}
-                    onChangeText={setEditPrice}
-                  />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>அடக்கல் MRP (MRP ₹):</Text>
-                  <TextInput
-                    style={styles.textInputEdit}
-                    keyboardType="numeric"
-                    value={editMrp}
-                    onChangeText={setEditMrp}
-                  />
-                </View>
-              </View>
-
-              {/* Description Input */}
-              <Text style={styles.fieldLabel}>தயாரிப்பு விளக்கம் (Description):</Text>
-              <TextInput
-                style={[styles.textInputEdit, { minHeight: 80 }]}
-                multiline
-                value={editDesc}
-                onChangeText={setEditDesc}
-              />
-
-              <Text style={styles.reviewSectionTitle}>சிறப்பம்சங்கள் (Highlights):</Text>
-              {currentProduct.highlights.map((h, i) => (
-                <Text key={i} style={styles.highlightBullet}>
-                  • {h}
-                </Text>
-              ))}
-
-              <Text style={styles.reviewSectionTitle}>விவரக்குறிப்புகள் (Specifications):</Text>
-              {currentProduct.specifications.map((spec, i) => (
-                <View key={i} style={styles.specRow}>
-                  <Text style={styles.specLabel}>{spec.label}:</Text>
-                  <Text style={styles.specVal}>{spec.value.value}</Text>
-                </View>
-              ))}
+              <TouchableOpacity
+                style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]}
+                onPress={handlePublish}
+                disabled={isLoading}
+                accessibilityRole="button"
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={theme.colors.white} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{t('addProduct.publishProduct')}</Text>
+                )}
+              </TouchableOpacity>
             </View>
+          )}
 
-            {/* Action Buttons: Edit or Publish */}
-            <TouchableOpacity
-              style={styles.primaryActionButton}
-              onPress={handlePublish}
-              disabled={isLoading}
-              activeOpacity={0.85}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={theme.colors.white} />
-              ) : (
-                <Text style={styles.primaryActionText}>🚀 Publish Live to Online Store</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* STEP 5: SUCCESS / PUBLISHED CELEBRATION */}
-        {currentFlowStep === 'success' && (
-          <View style={styles.successContainer}>
-            <Text style={styles.successIcon}>🎉</Text>
-            <Text style={styles.successTitle}>தயாரிப்பு வெற்றிகரமாக வெளியிடப்பட்டது!</Text>
-            <Text style={styles.successSub}>Published Live on Your E-Commerce Store</Text>
-
-            <TouchableOpacity style={styles.primaryActionButton} onPress={onFinish}>
-              <Text style={styles.primaryActionText}>View Live Catalog Dashboard →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
+          {/* ===== STEP 5: SUCCESS ===== */}
+          {currentFlowStep === 'success' && (
+            <View style={styles.successContainer}>
+              <Text style={styles.successIcon}>🎉</Text>
+              <Text style={styles.successTitle}>{t('addProduct.successTitle')}</Text>
+              <Text style={styles.successSub}>{t('addProduct.successSubtitle')}</Text>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={onFinish}
+                accessibilityRole="button"
+              >
+                <Text style={styles.primaryBtnText}>{t('addProduct.backToDashboard')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   flowBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingTop: Platform.OS === 'android' ? 36 : 14,
-    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     backgroundColor: theme.colors.white,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.gray200,
+    gap: 8,
   },
   backBtn: {
     paddingVertical: 6,
@@ -970,323 +843,88 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.gray100,
     borderRadius: 8,
   },
-  backBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
-  backBtnDisabled: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  backBtnDisabledText: {
-    fontSize: 11,
-    color: theme.colors.gray400,
-    fontWeight: '600',
-  },
-  stepBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
+  backBtnText: { fontSize: 14, fontWeight: '700', color: theme.colors.primary },
+  stepDots: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  stepDotWrapper: { flexDirection: 'row', alignItems: 'center' },
   stepDot: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    backgroundColor: theme.colors.gray100,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: theme.colors.gray200,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  stepDotActive: {
-    backgroundColor: theme.colors.primary,
+  stepDotActive: { backgroundColor: theme.colors.primary },
+  stepDotDone: { backgroundColor: theme.colors.success },
+  stepDotText: { fontSize: 10, fontWeight: '700', color: theme.colors.gray400 },
+  stepDotTextActive: { color: theme.colors.white },
+  stepLine: {
+    width: Math.max(8, (width - 200) / 6),
+    height: 2,
+    backgroundColor: theme.colors.gray200,
+    marginHorizontal: 2,
   },
-  stepDotText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-  },
-  stepDotTextActive: {
-    color: theme.colors.white,
-  },
-  stepArrow: {
-    fontSize: 9,
-    color: theme.colors.gray400,
-  },
-  exitBtn: {
-    padding: 6,
-  },
-  exitBtnText: {
-    fontSize: 16,
-    color: theme.colors.gray400,
-    fontWeight: '700',
-  },
+  stepLabel: { fontSize: 11, fontWeight: '700', color: theme.colors.text.secondary },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: Math.min(20, width * 0.05),
+    paddingBottom: 48,
   },
-  stepContainer: {
-    flex: 1,
-  },
-  stepTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  stepSub: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    marginBottom: 16,
-  },
+  stepTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.text.primary, marginBottom: 4 },
+  stepSub: { fontSize: 12, color: theme.colors.text.secondary, marginBottom: 16, lineHeight: 18 },
+
+  // Photo step
   photoFrame: {
     width: '100%',
-    height: 260,
+    height: 240,
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#F8FAFC',
     borderWidth: 2,
     borderColor: '#E2E8F0',
-    marginBottom: 16,
+    marginBottom: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
     position: 'relative',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  emptyPhotoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  emptyPhotoTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-  },
-  emptyPhotoSub: {
-    fontSize: 12,
-    color: theme.colors.text.secondary,
-    marginTop: 2,
-  },
-  bgLoadingOverlay: {
+  previewImage: { width: '100%', height: '100%' },
+  emptyPhoto: { alignItems: 'center' },
+  emptyPhotoIcon: { fontSize: 44, marginBottom: 8 },
+  emptyPhotoText: { fontSize: 13, color: theme.colors.text.secondary, fontWeight: '600' },
+  processingOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(15, 23, 42, 0.90)',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(15,23,42,0.88)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 99,
-    paddingHorizontal: 20,
+    gap: 8,
   },
-  bgLoadingTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  bgLoadingSub: {
-    fontSize: 12,
-    color: '#94A3B8',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  previewImage: {
-    width: '90%',
-    height: '90%',
-    resizeMode: 'contain',
-  },
-  qualityCheckBadge: {
+  processingText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  processingSubText: { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
+  studioBadge: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    paddingVertical: 8,
+    bottom: 10,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15,23,42,0.85)',
     paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 10,
   },
-  qualityText: {
-    color: theme.colors.white,
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  studioBgRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  studioChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: theme.colors.gray100,
-    borderWidth: 1,
-    borderColor: theme.colors.gray200,
-  },
-  studioChipActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  studioChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-  },
-  studioChipTextActive: {
-    color: theme.colors.white,
-  },
-  photoActionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  photoOptionBtn: {
+  studioBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  photoActionRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  photoBtn: {
     flex: 1,
-    height: 48,
+    height: 46,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
-  photoOptionIcon: {
-    fontSize: 16,
-  },
-  photoOptionText: {
-    color: theme.colors.white,
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  micCircleContainer: {
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  micCircleBtn: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...theme.shadows.md,
-  },
-  micCircleBtnRecording: {
-    backgroundColor: '#EF4444',
-  },
-  micCircleIcon: {
-    fontSize: 40,
-  },
-  recordingPulse: {
-    marginTop: 12,
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignItems: 'center',
-  },
-  aiVoiceProcessingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#93C5FD',
-  },
-  aiVoiceProcessingText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
-  waveBarRow: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  waveBar: {
-    width: 4,
-    height: 14,
-    backgroundColor: '#EF4444',
-    borderRadius: 2,
-  },
-  recordingTimerText: {
-    color: '#DC2626',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  micInstructionText: {
-    marginTop: 12,
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    fontWeight: '600',
-  },
-  transcriptBoxContainer: {
-    marginBottom: 16,
-  },
-  transcriptLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-    marginBottom: 6,
-  },
-  transcriptInput: {
-    backgroundColor: theme.colors.white,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.gray200,
-    fontSize: 14,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  translationCard: {
-    backgroundColor: '#EEF2FF',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.primary,
-  },
-  translationCardTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: theme.colors.primary,
-    marginBottom: 4,
-  },
-  translationCardText: {
-    fontSize: 13,
-    color: theme.colors.text.primary,
-    fontWeight: '600',
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-    marginBottom: 10,
-  },
-  promptChip: {
-    backgroundColor: theme.colors.white,
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.gray200,
-  },
-  promptChipLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.primary,
-    marginBottom: 2,
-  },
-  promptChipText: {
-    fontSize: 12,
-    color: theme.colors.text.secondary,
-  },
-  primaryActionButton: {
+  photoBtnIcon: { fontSize: 16 },
+  photoBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Primary button
+  primaryBtn: {
     backgroundColor: theme.colors.primary,
     height: 52,
     borderRadius: 14,
@@ -1295,85 +933,161 @@ const styles = StyleSheet.create({
     marginTop: 16,
     ...theme.shadows.sm,
   },
-  primaryActionText: {
-    color: theme.colors.white,
-    fontSize: 15,
-    fontWeight: '700',
+  primaryBtnDisabled: { backgroundColor: theme.colors.gray300 },
+  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Voice step
+  progressCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
   },
-  aiTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: theme.colors.text.primary,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  aiSub: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  aiProgressList: {
-    backgroundColor: theme.colors.white,
-    padding: 20,
-    borderRadius: 16,
-    gap: 16,
-  },
-  aiProgressRow: {
+  progressHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  progressTitle: { fontSize: 12, fontWeight: '700', color: '#F8FAFC' },
+  progressPercent: { fontSize: 13, fontWeight: '800', color: '#38BDF8' },
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#334155',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressFill: { height: '100%', backgroundColor: '#10B981', borderRadius: 3 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  collectedBadge: {
+    backgroundColor: '#064E3B',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#059669',
+  },
+  collectedBadgeText: { color: '#A7F3D0', fontSize: 10, fontWeight: '700' },
+  remainingBadge: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  remainingBadgeText: { color: '#94A3B8', fontSize: 10, fontWeight: '600' },
+  chatContainer: { marginBottom: 12, gap: 8 },
+  bubble: { maxWidth: '85%', padding: 12, borderRadius: 14 },
+  bubbleAi: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderTopLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  bubbleSeller: { alignSelf: 'flex-end', backgroundColor: '#3B82F6', borderTopRightRadius: 4 },
+  bubbleText: { fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  bubbleTextAi: { color: '#1E3A8A' },
+  bubbleTextSeller: { color: '#fff' },
+  chipsScroll: { paddingVertical: 4, gap: 8 },
+  optionChip: {
+    backgroundColor: theme.colors.white,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+  },
+  optionChipText: { fontSize: 12, fontWeight: '700', color: theme.colors.primary },
+  inputCard: {
+    backgroundColor: theme.colors.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 4,
+    ...theme.shadows.sm,
+  },
+  micRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 },
+  micBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: theme.colors.primary,
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
+    ...theme.shadows.md,
   },
-  aiProgressCheck: {
-    fontSize: 18,
+  micBtnRecording: { backgroundColor: '#EF4444' },
+  micBtnIcon: { fontSize: 32 },
+  micHint: { fontSize: 13, color: theme.colors.text.secondary, fontWeight: '600', flex: 1 },
+  transcribingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  transcribingText: { fontSize: 12, fontWeight: '700', color: theme.colors.primary, flex: 1 },
+  recordingRow: { flex: 1 },
+  recordingText: { fontSize: 13, fontWeight: '700', color: '#EF4444' },
+  transcriptCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
   },
-  aiProgressText: {
+  transcriptLabel: { fontSize: 11, fontWeight: '700', color: '#15803D', marginBottom: 3 },
+  transcriptText: { fontSize: 13, color: '#166534', fontWeight: '600', lineHeight: 18 },
+  translationLabel: { fontSize: 11, fontWeight: '700', color: '#1E40AF', marginTop: 6, marginBottom: 2 },
+  translationText: { fontSize: 12, color: '#1E3A8A', fontWeight: '500' },
+  textRow: { flexDirection: 'row', gap: 8 },
+  textInput: {
+    flex: 1,
+    height: 42,
+    backgroundColor: theme.colors.gray100,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     fontSize: 13,
-    fontWeight: '600',
     color: theme.colors.text.primary,
+    borderWidth: 1,
+    borderColor: theme.colors.gray200,
   },
+  sendBtn: {
+    height: 42,
+    paddingHorizontal: 14,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // AI Processing step
+  aiProcessingContainer: { alignItems: 'center', paddingVertical: 24 },
+  aiTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.text.primary, marginBottom: 6 },
+  aiSub: { fontSize: 13, color: theme.colors.text.secondary, textAlign: 'center', marginBottom: 24 },
+  aiStepList: {
+    backgroundColor: theme.colors.white,
+    borderRadius: 14,
+    padding: 18,
+    gap: 14,
+    width: '100%',
+  },
+  aiStepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  aiStepCheck: { fontSize: 18 },
+  aiStepText: { fontSize: 13, fontWeight: '600', color: theme.colors.text.primary, flex: 1 },
+
+  // Review step
   reviewCard: {
     backgroundColor: theme.colors.white,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
     ...theme.shadows.sm,
   },
-  studioWhiteImageContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
+  reviewImageContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    position: 'relative',
   },
-  reviewImage: {
-    width: '100%',
-    height: 200,
-    resizeMode: 'contain',
-  },
-  amazonBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  amazonBadgeText: {
-    color: theme.colors.white,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  reviewCategory: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.colors.primary,
-    marginBottom: 8,
-  },
+  reviewImage: { width: '100%', height: 180 },
   fieldLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -1381,7 +1095,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     marginTop: 8,
   },
-  textInputEdit: {
+  editInput: {
     backgroundColor: theme.colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 12,
@@ -1390,12 +1104,20 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     borderWidth: 1,
     borderColor: theme.colors.gray200,
-    marginBottom: 6,
   },
-  priceEditRow: {
-    flexDirection: 'row',
-    gap: 12,
+  editInputError: { borderColor: theme.colors.error },
+  editInputMultiline: { minHeight: 72, paddingTop: 10 },
+  validationError: { fontSize: 11, color: theme.colors.error, marginTop: 3 },
+  reviewMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  metaChip: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 8,
+    padding: 8,
+    minWidth: 80,
   },
+  metaChipLabel: { fontSize: 10, color: theme.colors.text.secondary, fontWeight: '600', marginBottom: 2 },
+  metaChipValue: { fontSize: 12, fontWeight: '700', color: theme.colors.primary },
+  priceRow: { flexDirection: 'row', gap: 12 },
   reviewSectionTitle: {
     fontSize: 13,
     fontWeight: '700',
@@ -1403,207 +1125,31 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 6,
   },
-  highlightBullet: {
-    fontSize: 13,
-    color: theme.colors.text.secondary,
-    marginBottom: 4,
-    lineHeight: 18,
-  },
+  bulletText: { fontSize: 13, color: theme.colors.text.secondary, marginBottom: 3, lineHeight: 18 },
   specRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.gray100,
   },
-  specLabel: {
-    fontSize: 12,
-    color: theme.colors.text.secondary,
-  },
-  specVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
-  },
-  successContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  successIcon: {
-    fontSize: 60,
-    marginBottom: 16,
-  },
+  specLabel: { fontSize: 12, color: theme.colors.text.secondary },
+  specValue: { fontSize: 12, fontWeight: '700', color: theme.colors.text.primary },
+
+  // Success step
+  successContainer: { alignItems: 'center', paddingVertical: 40 },
+  successIcon: { fontSize: 64, marginBottom: 16 },
   successTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: theme.colors.text.primary,
-    marginBottom: 4,
     textAlign: 'center',
+    marginBottom: 6,
   },
   successSub: {
     fontSize: 13,
     color: theme.colors.text.secondary,
-    marginBottom: 24,
     textAlign: 'center',
-  },
-  // Guided AI Product Assistant Styles
-  assistantProgressCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  progressHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  progressTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#F8FAFC',
-  },
-  progressPercentText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#38BDF8',
-  },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: '#334155',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#10B981',
-    borderRadius: 4,
-  },
-  collectedBadgesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  collectedBadge: {
-    backgroundColor: '#064E3B',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#059669',
-  },
-  collectedBadgeText: {
-    color: '#A7F3D0',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  remainingBadge: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  remainingBadgeText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  chatContainer: {
-    marginBottom: 16,
-    gap: 10,
-  },
-  chatBubble: {
-    maxWidth: '85%',
-    padding: 14,
-    borderRadius: 16,
-  },
-  chatBubbleAi: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EFF6FF',
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  chatBubbleSeller: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#3B82F6',
-    borderTopRightRadius: 4,
-  },
-  chatTextAi: {
-    fontSize: 14,
-    color: '#1E3A8A',
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  chatTextSeller: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  chipsSection: {
-    marginBottom: 16,
-  },
-  chipsSectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.text.secondary,
-    marginBottom: 8,
-  },
-  chipsScroll: {
-    gap: 8,
-  },
-  optionChipBtn: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  optionChipText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#4338CA',
-  },
-  inputControlsCard: {
-    backgroundColor: theme.colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: theme.colors.gray200,
-    ...theme.shadows.sm,
-  },
-  textInputRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  hybridTextInput: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    color: theme.colors.text.primary,
-  },
-  sendInputBtn: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendInputBtnText: {
-    color: theme.colors.white,
-    fontWeight: '700',
-    fontSize: 13,
+    marginBottom: 24,
   },
 });

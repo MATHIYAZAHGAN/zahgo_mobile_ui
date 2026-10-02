@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,16 @@ import {
   Image,
   SafeAreaView,
   ActivityIndicator,
+  RefreshControl,
+  Dimensions,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { theme } from '../config/theme';
 import { useAuthStore } from '../store/authStore';
 import { useProductStore } from '../store/productStore';
 import { ProductStatus } from '../types/product';
+
+const { width } = Dimensions.get('window');
 
 interface HomeScreenProps {
   onStartAddProduct: () => void;
@@ -26,117 +31,146 @@ export default function HomeScreen({
   onStartAIStudio,
   onViewProducts,
 }: HomeScreenProps) {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const { products, fetchProducts, isLoading } = useProductStore();
 
-  useEffect(() => {
+  const onRefresh = useCallback(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  React.useEffect(() => {
     fetchProducts();
   }, []);
 
   const totalCount = products.length;
   const publishedCount = products.filter((p) => p.status === ProductStatus.Published).length;
-  const draftCount = products.filter((p) => p.status === ProductStatus.Draft || p.status === ProductStatus.AIReview).length;
+  const draftCount = products.filter(
+    (p) => p.status === ProductStatus.Draft || p.status === ProductStatus.AIReview
+  ).length;
+
+  // Sort by most recent first
+  const recentProducts = [...products]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header Bar */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
+      >
+        {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greetingText}>வணக்கம்! 👋</Text>
-            <Text style={styles.sellerName}>{user?.name || user?.shopName || 'ZAH Seller'}</Text>
-            {user?.shopName && <Text style={styles.shopSubtext}>🏪 {user.shopName}</Text>}
+          <View style={styles.headerLeft}>
+            <Text style={styles.greetingText}>{t('home.greeting')}</Text>
+            <Text style={styles.sellerName} numberOfLines={1}>
+              {user?.name || user?.shopName || 'ZAH Seller'}
+            </Text>
+            {user?.shopName && (
+              <Text style={styles.shopSubtext} numberOfLines={1}>
+                🏪 {user.shopName}
+              </Text>
+            )}
           </View>
           <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>AI Ready ✨</Text>
+            <Text style={styles.headerBadgeText}>{t('home.aiReady')}</Text>
           </View>
         </View>
 
-        {/* Hero CTA Banner: Add Product */}
+        {/* Hero CTA Banner */}
         <View style={styles.heroBanner}>
-          <Text style={styles.heroTitle}>புதிய தயாரிப்பு சேர்க்க 🚀</Text>
-          <Text style={styles.heroSubtitle}>
-            புகைப்படம் எடுங்கள் 📸 → பேசுங்கள் 🎙️ → AI பட்டியலை உருவாக்கும் 🤖
-          </Text>
-
+          <Text style={styles.heroTitle}>{t('home.addProductTitle')}</Text>
+          <Text style={styles.heroSubtitle}>{t('home.addProductSubtitle')}</Text>
           <TouchableOpacity
             style={styles.heroButton}
             onPress={onStartAddProduct}
             activeOpacity={0.85}
+            accessibilityLabel={t('home.addProductButton')}
+            accessibilityRole="button"
           >
             <Text style={styles.heroButtonIcon}>➕</Text>
-            <Text style={styles.heroButtonText}>Add Product / தயாரிப்பு சேர்க்க</Text>
+            <Text style={styles.heroButtonText}>{t('home.addProductButton')}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* AI Product Studio CTA */}
+        {/* AI Studio Banner */}
         <TouchableOpacity
           style={styles.aiStudioBanner}
           onPress={onStartAIStudio}
           activeOpacity={0.85}
+          accessibilityRole="button"
         >
           <View style={styles.aiStudioIconWrap}>
             <Text style={styles.aiStudioIcon}>✨</Text>
           </View>
           <View style={styles.aiStudioInfo}>
-            <Text style={styles.aiStudioTitle}>AI Product Studio</Text>
-            <Text style={styles.aiStudioSubtitle}>
-              Turn your photo into a professional studio image
+            <Text style={styles.aiStudioTitle}>{t('home.aiStudioTitle')}</Text>
+            <Text style={styles.aiStudioSubtitle} numberOfLines={1}>
+              {t('home.aiStudioSubtitle')}
             </Text>
           </View>
           <Text style={styles.aiStudioArrow}>→</Text>
         </TouchableOpacity>
 
-        {/* Today's Overview Stats */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>இன்றைய மேலோட்டம் (Today's Overview)</Text>
-        </View>
-
+        {/* Stats */}
+        <Text style={styles.sectionTitle}>{t('home.overviewTitle')}</Text>
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: '#EEF2FF' }]}>
             <Text style={[styles.statNumber, { color: theme.colors.primary }]}>{totalCount}</Text>
-            <Text style={styles.statLabel}>மொத்த பொருட்கள்</Text>
-            <Text style={styles.statSublabel}>Total Products</Text>
+            <Text style={styles.statLabel}>{t('home.totalProducts')}</Text>
           </View>
-
           <View style={[styles.statCard, { backgroundColor: '#ECFDF5' }]}>
             <Text style={[styles.statNumber, { color: theme.colors.success }]}>{publishedCount}</Text>
-            <Text style={styles.statLabel}>வெளியிடப்பட்டது</Text>
-            <Text style={styles.statSublabel}>Published</Text>
+            <Text style={styles.statLabel}>{t('home.published')}</Text>
           </View>
-
           <View style={[styles.statCard, { backgroundColor: '#FFFBEB' }]}>
             <Text style={[styles.statNumber, { color: '#D97706' }]}>{draftCount}</Text>
-            <Text style={styles.statLabel}>வரைவு</Text>
-            <Text style={styles.statSublabel}>Drafts</Text>
+            <Text style={styles.statLabel}>{t('home.drafts')}</Text>
           </View>
         </View>
 
         {/* Recent Products */}
-        <View style={styles.sectionHeaderBetween}>
-          <Text style={styles.sectionTitle}>சமீபத்திய பொருட்கள் (Recent Products)</Text>
-          <TouchableOpacity onPress={onViewProducts}>
-            <Text style={styles.viewAllText}>அனைத்தும் காண் →</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>{t('home.recentProducts')}</Text>
+          <TouchableOpacity onPress={onViewProducts} accessibilityRole="button">
+            <Text style={styles.viewAllText}>{t('home.viewAll')}</Text>
           </TouchableOpacity>
         </View>
 
-        {isLoading ? (
-          <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 24 }} />
+        {isLoading && products.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={styles.loadingText}>{t('common.loading')}</Text>
+          </View>
         ) : products.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>📦</Text>
-            <Text style={styles.emptyTitle}>இன்னும் பொருட்கள் சேர்க்கப்படவில்லை</Text>
-            <Text style={styles.emptySubtitle}>
-              AI மூலம் உங்கள் முதல் தயாரிப்பை உடனே பதிவேற்றவும்
-            </Text>
-            <TouchableOpacity style={styles.emptyButton} onPress={onStartAddProduct}>
-              <Text style={styles.emptyButtonText}>+ Add First Product</Text>
+            <Text style={styles.emptyTitle}>{t('home.emptyTitle')}</Text>
+            <Text style={styles.emptySubtitle}>{t('home.emptySubtitle')}</Text>
+            <TouchableOpacity
+              style={styles.emptyButton}
+              onPress={onStartAddProduct}
+              accessibilityRole="button"
+            >
+              <Text style={styles.emptyButtonText}>{t('home.addFirstProduct')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          products.slice(0, 5).map((product) => {
+          recentProducts.map((product) => {
             const isPublished = product.status === ProductStatus.Published;
-            const primaryImg = product.images?.[0]?.thumbnailUrl || product.images?.[0]?.originalUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200';
+            const primaryImg =
+              product.images?.[0]?.thumbnailUrl ||
+              product.images?.[0]?.originalUrl ||
+              null;
 
             return (
               <TouchableOpacity
@@ -144,32 +178,54 @@ export default function HomeScreen({
                 style={styles.productCard}
                 onPress={onViewProducts}
                 activeOpacity={0.7}
+                accessibilityRole="button"
               >
-                <Image source={{ uri: primaryImg }} style={styles.productImage} />
+                <View style={styles.productImageContainer}>
+                  {primaryImg ? (
+                    <Image
+                      source={{ uri: primaryImg }}
+                      style={styles.productImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.productImage, styles.productImagePlaceholder]}>
+                      <Text style={styles.productImagePlaceholderText}>📦</Text>
+                    </View>
+                  )}
+                </View>
 
                 <View style={styles.productInfo}>
                   <Text style={styles.productName} numberOfLines={1}>
                     {product.name?.value || 'Untitled Product'}
                   </Text>
-                  <Text style={styles.productCategory}>
+                  <Text style={styles.productCategory} numberOfLines={1}>
                     {product.categoryName?.value || 'General'}
                   </Text>
-
                   <View style={styles.priceRow}>
                     <Text style={styles.productPrice}>
-                      ₹{product.pricing?.price?.value || 0}
+                      ₹{(product.pricing?.price?.value || 0).toLocaleString('en-IN')}
                     </Text>
-                    {product.pricing?.compareAtPrice?.value ? (
+                    {(product.pricing?.compareAtPrice?.value || 0) > 0 && (
                       <Text style={styles.comparePrice}>
-                        ₹{product.pricing.compareAtPrice.value}
+                        ₹{(product.pricing.compareAtPrice.value || 0).toLocaleString('en-IN')}
                       </Text>
-                    ) : null}
+                    )}
                   </View>
                 </View>
 
-                <View style={[styles.statusBadge, isPublished ? styles.badgePublished : styles.badgeDraft]}>
-                  <Text style={[styles.statusBadgeText, isPublished ? styles.textPublished : styles.textDraft]}>
-                    {isPublished ? 'Published ✅' : 'Draft 📝'}
+                <View
+                  style={[
+                    styles.statusBadge,
+                    isPublished ? styles.badgePublished : styles.badgeDraft,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusBadgeText,
+                      isPublished ? styles.textPublished : styles.textDraft,
+                    ]}
+                  >
+                    {isPublished ? `${t('catalog.published')} ✅` : `${t('catalog.draft')} 📝`}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -182,12 +238,9 @@ export default function HomeScreen({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: Math.min(20, width * 0.05),
     paddingTop: 16,
     paddingBottom: 40,
   },
@@ -197,68 +250,62 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 20,
   },
+  headerLeft: { flex: 1, marginRight: 12 },
   greetingText: {
-    fontSize: theme.typography.fontSize.sm,
+    fontSize: 13,
     color: theme.colors.text.secondary,
     fontWeight: '500',
   },
   sellerName: {
-    fontSize: theme.typography.fontSize['2xl'],
+    fontSize: Math.min(22, width * 0.055),
     fontWeight: '700',
     color: theme.colors.text.primary,
   },
   shopSubtext: {
-    fontSize: theme.typography.fontSize.xs,
+    fontSize: 12,
     color: theme.colors.primary,
     fontWeight: '600',
     marginTop: 2,
   },
   headerBadge: {
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
   },
-  headerBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.primary,
-  },
+  headerBadgeText: { fontSize: 11, fontWeight: '700', color: theme.colors.primary },
   heroBanner: {
     backgroundColor: theme.colors.primary,
     borderRadius: 20,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 16,
     ...theme.shadows.md,
   },
   heroTitle: {
-    fontSize: 20,
+    fontSize: Math.min(20, width * 0.05),
     fontWeight: '700',
     color: theme.colors.white,
     marginBottom: 6,
   },
   heroSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#E0E7FF',
-    marginBottom: 18,
+    marginBottom: 16,
     lineHeight: 18,
   },
   heroButton: {
     backgroundColor: theme.colors.white,
     flexDirection: 'row',
-    height: 52,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     ...theme.shadows.sm,
   },
-  heroButtonIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
+  heroButtonIcon: { fontSize: 16, marginRight: 8 },
   heroButtonText: {
     color: theme.colors.primary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   aiStudioBanner: {
@@ -273,20 +320,15 @@ const styles = StyleSheet.create({
     ...theme.shadows.sm,
   },
   aiStudioIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: '#F5F3FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  aiStudioIcon: {
-    fontSize: 22,
-  },
-  aiStudioInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
+  aiStudioIcon: { fontSize: 20 },
+  aiStudioInfo: { flex: 1, marginLeft: 12 },
   aiStudioTitle: {
     fontSize: 14,
     fontWeight: '800',
@@ -302,20 +344,18 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: '800',
   },
-  sectionHeader: {
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.text.primary,
     marginBottom: 12,
   },
-  sectionHeaderBetween: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 8,
     marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.text.primary,
   },
   viewAllText: {
     fontSize: 13,
@@ -324,51 +364,59 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     marginBottom: 24,
   },
   statCard: {
     flex: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: Math.min(24, width * 0.06),
     fontWeight: '800',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
     color: theme.colors.text.primary,
+    textAlign: 'center',
   },
-  statSublabel: {
-    fontSize: 10,
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 13,
     color: theme.colors.text.secondary,
   },
   productCard: {
     flexDirection: 'row',
     backgroundColor: theme.colors.white,
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
     alignItems: 'center',
     ...theme.shadows.sm,
   },
+  productImageContainer: { marginRight: 12 },
   productImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 10,
     backgroundColor: theme.colors.gray100,
   },
-  productInfo: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 8,
+  productImagePlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  productImagePlaceholderText: { fontSize: 24 },
+  productInfo: { flex: 1, marginRight: 8 },
   productName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: theme.colors.text.primary,
     marginBottom: 2,
@@ -378,18 +426,14 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
     marginBottom: 4,
   },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   productPrice: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: theme.colors.primary,
   },
   comparePrice: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.gray400,
     textDecorationLine: 'line-through',
   },
@@ -398,38 +442,25 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  badgePublished: {
-    backgroundColor: '#ECFDF5',
-  },
-  badgeDraft: {
-    backgroundColor: '#FFFBEB',
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  textPublished: {
-    color: theme.colors.success,
-  },
-  textDraft: {
-    color: '#D97706',
-  },
+  badgePublished: { backgroundColor: '#ECFDF5' },
+  badgeDraft: { backgroundColor: '#FFFBEB' },
+  statusBadgeText: { fontSize: 10, fontWeight: '700' },
+  textPublished: { color: theme.colors.success },
+  textDraft: { color: '#D97706' },
   emptyState: {
     backgroundColor: theme.colors.white,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
-    marginVertical: 12,
+    marginVertical: 8,
   },
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: theme.colors.text.primary,
     marginBottom: 4,
+    textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 12,
@@ -446,6 +477,6 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     color: theme.colors.white,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
 });

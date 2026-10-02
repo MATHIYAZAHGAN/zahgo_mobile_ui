@@ -35,6 +35,7 @@ const getApiUrl = (): string => {
   }
 
   // Physical Mobile Device Wi-Fi IP fallback to reach computer backend
+  // TODO: Update this IP if your machine's local network IP changes (run `ipconfig` to check)
   return 'http://10.238.251.96:5000/api/v1';
 };
 

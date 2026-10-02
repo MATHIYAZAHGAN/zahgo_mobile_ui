@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { theme } from './src/config/theme';
 import { useAuthStore } from './src/store/authStore';
 import { useProductStore } from './src/store/productStore';
@@ -23,103 +30,104 @@ import BottomNavigation, { MainTab } from './src/components/BottomNavigation';
 type FlowScreenMode = 'welcome' | 'login' | 'register' | 'main' | 'add_product' | 'ai_studio';
 
 export default function App() {
+  const { t } = useTranslation();
   const { isAuthenticated, isLoading: authLoading, loadUser } = useAuthStore();
   const { loadLanguage, isLoading: langLoading } = useLanguageStore();
-  const { startNewProductFlow, startEditProductFlow } = useProductStore();
+  const { startNewProductFlow, startEditProductFlow, fetchProducts } = useProductStore();
 
   const [screenMode, setScreenMode] = useState<FlowScreenMode>('welcome');
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [editProductId, setEditProductId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load user authentication and language preference
     const initialize = async () => {
       await Promise.all([loadUser(), loadLanguage()]);
     };
     initialize();
   }, []);
 
-  // Sync screenMode with authentication state
+  // Sync screen with auth state
   useEffect(() => {
     if (isAuthenticated) {
       setScreenMode('main');
+      fetchProducts(); // Load real products on auth
     }
   }, [isAuthenticated]);
 
   const handleStartAddProduct = () => {
     startNewProductFlow();
-    setEditProductId(null); // Clear edit mode
+    setEditProductId(null);
     setScreenMode('add_product');
   };
 
   const handleEditProduct = (productId: string) => {
-    startEditProductFlow(productId); // Load product and go to review step
+    startEditProductFlow(productId);
     setEditProductId(productId);
     setScreenMode('add_product');
   };
 
   const handleFinishAddProduct = () => {
-    setEditProductId(null); // Clear edit mode
+    setEditProductId(null);
     setScreenMode('main');
     setActiveTab('products');
+    fetchProducts(); // Refresh list after adding
   };
 
   const handleCancelAddProduct = () => {
-    setEditProductId(null); // Clear edit mode
+    setEditProductId(null);
     setScreenMode('main');
   };
 
-  // Loading Splash
+  // Loading splash
   if (authLoading || langLoading) {
     return (
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>ZAH Seller AI தொடங்குகிறது...</Text>
+          <View style={styles.splashLogo}>
+            <Text style={styles.splashLogoText}>ZAH</Text>
+            <Text style={styles.splashLogoSub}>SELLER AI</Text>
+          </View>
+          <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 32 }} />
         </View>
       </SafeAreaProvider>
     );
   }
 
-  // Welcome Screen
+  // Welcome screen
   if (!isAuthenticated && screenMode === 'welcome') {
     return (
       <SafeAreaProvider>
         <StatusBar style="dark" />
         <View style={styles.container}>
           <View style={styles.welcomeContent}>
-            {/* Logo */}
             <View style={styles.logoContainer}>
               <Text style={styles.logoText}>ZAH</Text>
               <Text style={styles.logoSubtext}>SELLER AI</Text>
             </View>
 
-            {/* Hero Greeting */}
-            <Text style={styles.welcomeTitle}>வணக்கம்! 👋</Text>
+            <Text style={styles.welcomeTitle}>{t('auth.greeting')}</Text>
             <Text style={styles.welcomeSubtitle}>
-              AI மூலம் உங்கள் தயாரிப்புகளை இணையத்தில் விற்கலாம்
-            </Text>
-            <Text style={styles.welcomeDesc}>
-              புகைப்படம் எடுங்கள் 📸, பேசுங்கள் 🎙️, AI நொடிகளில் தயாரிப்பு பட்டியலை உருவாக்கி தரும் 🚀
+              {t('auth.registerSubtitle')}
             </Text>
 
-            {/* Buttons */}
-            <View style={styles.welcomeButtonContainer}>
+            <View style={styles.welcomeButtons}>
               <TouchableOpacity
                 style={[styles.button, styles.primaryButton]}
                 onPress={() => setScreenMode('register')}
                 activeOpacity={0.85}
+                accessibilityRole="button"
               >
-                <Text style={styles.primaryButtonText}>Get Started / புதிய கணக்கு</Text>
+                <Text style={styles.primaryButtonText}>{t('auth.createAccount')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.button, styles.secondaryButton]}
                 onPress={() => setScreenMode('login')}
                 activeOpacity={0.85}
+                accessibilityRole="button"
               >
-                <Text style={styles.secondaryButtonText}>Login / உள்நுழைக</Text>
+                <Text style={styles.secondaryButtonText}>{t('auth.login')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -128,7 +136,6 @@ export default function App() {
     );
   }
 
-  // Login Screen
   if (!isAuthenticated && screenMode === 'login') {
     return (
       <SafeAreaProvider>
@@ -141,7 +148,6 @@ export default function App() {
     );
   }
 
-  // Register Screen
   if (!isAuthenticated && screenMode === 'register') {
     return (
       <SafeAreaProvider>
@@ -154,7 +160,6 @@ export default function App() {
     );
   }
 
-  // Add Product Guided Flow
   if (screenMode === 'add_product') {
     return (
       <SafeAreaProvider>
@@ -168,7 +173,6 @@ export default function App() {
     );
   }
 
-  // AI Product Studio Page
   if (screenMode === 'ai_studio') {
     return (
       <SafeAreaProvider>
@@ -184,12 +188,11 @@ export default function App() {
     );
   }
 
-  // Main Application Shell (Home, Products, Profile)
+  // Main shell
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <View style={styles.mainShell}>
-        {/* Render Tab Content */}
         <View style={styles.mainContent}>
           {activeTab === 'home' && (
             <HomeScreen
@@ -198,7 +201,6 @@ export default function App() {
               onViewProducts={() => setActiveTab('products')}
             />
           )}
-
           {activeTab === 'products' && (
             <ProductsScreen
               onStartAddProduct={handleStartAddProduct}
@@ -206,7 +208,6 @@ export default function App() {
               onBackToHome={() => setActiveTab('home')}
             />
           )}
-
           {activeTab === 'profile' && (
             <ProfileScreen
               onLogout={() => setScreenMode('welcome')}
@@ -214,8 +215,6 @@ export default function App() {
             />
           )}
         </View>
-
-        {/* Persistent Bottom Navigation */}
         <BottomNavigation
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -227,32 +226,34 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: theme.colors.background,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    fontWeight: '600',
+  splashLogo: { alignItems: 'center' },
+  splashLogoText: {
+    fontSize: 52,
+    fontWeight: '800',
     color: theme.colors.primary,
+    letterSpacing: 6,
+  },
+  splashLogoSub: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.text.secondary,
+    letterSpacing: 4,
+    marginTop: 4,
   },
   welcomeContent: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingTop: 80,
     alignItems: 'center',
   },
-  logoContainer: {
-    marginBottom: 40,
-    alignItems: 'center',
-  },
+  logoContainer: { marginBottom: 44, alignItems: 'center' },
   logoText: {
     fontSize: 52,
     fontWeight: '800',
@@ -260,7 +261,7 @@ const styles = StyleSheet.create({
     letterSpacing: 6,
   },
   logoSubtext: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: theme.colors.text.secondary,
     letterSpacing: 4,
@@ -270,28 +271,19 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     color: theme.colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: 'center',
   },
   welcomeSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.primary,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  welcomeDesc: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
     color: theme.colors.text.secondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 48,
-    paddingHorizontal: 12,
+    marginBottom: 52,
+    paddingHorizontal: 8,
   },
-  welcomeButtonContainer: {
-    width: '100%',
-    gap: 14,
-  },
+  welcomeButtons: { width: '100%', gap: 14 },
   button: {
     width: '100%',
     height: 52,
@@ -303,26 +295,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     ...theme.shadows.md,
   },
-  primaryButtonText: {
-    color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  primaryButtonText: { color: theme.colors.white, fontSize: 16, fontWeight: '700' },
   secondaryButton: {
     backgroundColor: theme.colors.white,
     borderWidth: 2,
     borderColor: theme.colors.primary,
   },
-  secondaryButtonText: {
-    color: theme.colors.primary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  mainShell: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  mainContent: {
-    flex: 1,
-  },
+  secondaryButtonText: { color: theme.colors.primary, fontSize: 16, fontWeight: '700' },
+  mainShell: { flex: 1, backgroundColor: theme.colors.background },
+  mainContent: { flex: 1 },
 });

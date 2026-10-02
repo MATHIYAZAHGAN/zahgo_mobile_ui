@@ -15,7 +15,7 @@ try {
   console.warn('expo-image-manipulator not available:', e);
 }
 
-const REMOVE_BG_API_KEY = '39ueuXbxieQdvccz8nvcJENf';
+const REMOVE_BG_API_KEY = 'zSNSLJavbFDSyRZtY4W9wNwZ';
 
 export interface ProcessedStudioImage {
   originalUri: string;
@@ -122,6 +122,9 @@ export class StudioImageProcessor {
       if (!apiResponse.ok) {
         const errorText = await apiResponse.text();
         console.warn('⚠️ Remove.bg API response notice:', apiResponse.status, errorText);
+        if (apiResponse.status === 402) {
+          console.warn('⚠️ Remove.bg credits exhausted — background removal skipped. Recharge at https://www.remove.bg/dashboard#credits');
+        }
         return imageUri;
       }
 
